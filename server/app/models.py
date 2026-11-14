@@ -12,11 +12,14 @@ class User(Base):
     hashed_password = Column(String(255), nullable=False)
     role = Column(String(20), default="user", nullable=False)  # "admin" or "user"
     is_active = Column(Boolean, default=True, nullable=False)
+    bedtime = Column(String(10), default="23:30")
+    wake_time = Column(String(10), default="07:30")
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
 
     schedules = relationship("ScheduleBlock", back_populates="user", cascade="all, delete-orphan")
     habits = relationship("Habit", back_populates="user", cascade="all, delete-orphan")
     friction_logs = relationship("FrictionLog", back_populates="user", cascade="all, delete-orphan")
+    messages = relationship("ChatMessage", back_populates="user", cascade="all, delete-orphan")
 
 class ScheduleBlock(Base):
     __tablename__ = "schedule_blocks"
@@ -24,7 +27,7 @@ class ScheduleBlock(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     title = Column(String(200), nullable=False)
-    block_type = Column(String(50), default="FOCUS")  # FOCUS, WORKOUT, TRANSITION, SAAS, WIND_DOWN
+    block_type = Column(String(50), default="FOCUS")  # FOCUS, WORKOUT, TRANSITION, SAAS, FITNESS_NUDGE, WIND_DOWN, SLEEP
     start_time = Column(String(10), nullable=False)   # "08:00"
     end_time = Column(String(10), nullable=False)     # "09:30"
     duration_minutes = Column(Integer, default=90)
@@ -63,6 +66,19 @@ class FrictionLog(Base):
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
 
     user = relationship("User", back_populates="friction_logs")
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    sender = Column(String(20), nullable=False)        # "user" or "agent"
+    content = Column(Text, nullable=False)
+    message_type = Column(String(30), default="TEXT")  # TEXT, CHECKIN, FITNESS_NUDGE, SCHEDULE_UPDATE
+    actions_json = Column(Text, nullable=True)         # JSON list of quick action chips, e.g. [{"id": "pushup", "label": "✓ Did 10 pushups", "action": "COMPLETE_NUDGE"}]
+    created_at = Column(DateTime, default=datetime.datetime.utcnow)
+
+    user = relationship("User", back_populates="messages")
 
 class ServerSetting(Base):
     __tablename__ = "server_settings"

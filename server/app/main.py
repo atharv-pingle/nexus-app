@@ -1,16 +1,17 @@
 import os
 import datetime
 from contextlib import asynccontextmanager
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, Depends, HTTPException, status, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.database import engine, Base, get_db
-from app.models import User, ScheduleBlock, Habit, FrictionLog, ServerSetting
+from app.models import User, ScheduleBlock, Habit, FrictionLog, ServerSetting, ChatMessage
 from app.auth import (
     verify_password,
     get_password_hash,
@@ -26,11 +27,28 @@ from app.openrouter import (
     execute_chat,
     DEFAULT_OPENROUTER_MODEL
 )
+from app.agent_service import (
+    ensure_full_day_schedule,
+    check_proactive_interventions,
+    handle_agent_dialogue,
+    shift_remaining_blocks,
+    parse_time_to_minutes,
+    format_minutes_to_time
+)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize database tables
     Base.metadata.create_all(bind=engine)
+
+    # Safe migration for new columns on SQLite
+    with engine.connect() as conn:
+        for col, col_type, def_val in [("bedtime", "VARCHAR(10)", "'23:30'"), ("wake_time", "VARCHAR(10)", "'07:30'")]:
+            try:
+                conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {col_type} DEFAULT {def_val}"))
+                conn.commit()
+            except Exception:
+                pass
     
     # Auto-bootstrap default admin user if none exists
     db = next(get_db())
@@ -138,6 +156,25 @@ class VoiceCommandResponse(BaseModel):
     voice_response: str
     updated_schedule: List[ScheduleBlockSchema]
 
+class ChatMessageSchema(BaseModel):
+    id: int
+    sender: str
+    content: str
+    message_type: str
+    actions_json: Optional[str] = None
+    created_at: datetime.datetime
+
+    class Config:
+        from_attributes = True
+
+class ChatSendRequest(BaseModel):
+    message: str
+
+class AgentActionExecuteRequest(BaseModel):
+    action: str
+    block_id: Optional[int] = None
+    mins: Optional[int] = None
+
 # ----------------- WEB UI ROUTES -----------------
 
 @app.get("/", response_class=HTMLResponse)
@@ -160,7 +197,6 @@ async def login(
     password: str = Form(...),
     db: Session = Depends(get_db)
 ):
-    # Support login with either username or email
     user = db.query(User).filter((User.username == username) | (User.email == username)).first()
     if not user or not verify_password(password, user.hashed_password):
         raise HTTPException(
@@ -212,21 +248,13 @@ async def create_user(
     db.commit()
     db.refresh(new_user)
     
-    # Seed default initial schedule & habits for the new user
-    today_str = datetime.date.today().isoformat()
-    defaults = [
-        ScheduleBlock(user_id=new_user.id, title="WFH Focus Block (Ultradian 1)", block_type="FOCUS", start_time="08:00", end_time="09:30", duration_minutes=90, scheduled_date=today_str, status="UPCOMING"),
-        ScheduleBlock(user_id=new_user.id, title="WFH Execution Block (Ultradian 2)", block_type="FOCUS", start_time="10:00", end_time="11:30", duration_minutes=90, scheduled_date=today_str, status="UPCOMING"),
-        ScheduleBlock(user_id=new_user.id, title="15:30 Interceptor & Power Nap (NSDR)", block_type="TRANSITION", start_time="15:30", end_time="15:55", duration_minutes=25, scheduled_date=today_str, status="UPCOMING"),
-        ScheduleBlock(user_id=new_user.id, title="Dumbbell & Bench Strength Session", block_type="WORKOUT", start_time="16:00", end_time="16:45", duration_minutes=45, scheduled_date=today_str, status="UPCOMING"),
-        ScheduleBlock(user_id=new_user.id, title="SaaS Income Engine Deep Work", block_type="SAAS", start_time="17:00", end_time="18:30", duration_minutes=90, scheduled_date=today_str, status="UPCOMING"),
-    ]
-    db.add_all(defaults)
+    # Pre-seed comprehensive day schedule until sleep
+    ensure_full_day_schedule(db, new_user)
     
     default_habits = [
         Habit(user_id=new_user.id, title="Dumbbell & Bench Strength", category="STRENGTH", current_day=1, streak=0),
-        Habit(user_id=new_user.id, title="15:30 Work-to-Life Transition Interceptor", category="SLEEP", current_day=1, streak=0),
-        Habit(user_id=new_user.id, title="Nightly Schedule Review", category="FOCUS", current_day=1, streak=0),
+        Habit(user_id=new_user.id, title="15:30 Power Nap / Rest (NSDR)", category="SLEEP", current_day=1, streak=0),
+        Habit(user_id=new_user.id, title="10 Pushups Micro-Habits", category="STRENGTH", current_day=1, streak=0),
     ]
     db.add_all(default_habits)
     db.commit()
@@ -302,32 +330,14 @@ async def test_key(
     res = await test_openrouter_key(req.key, req.model)
     return res
 
-# ----------------- SCHEDULE APIS (FOR USER & MOBILE APP) -----------------
+# ----------------- SCHEDULE APIS (FULL DAY UNTIL SLEEP) -----------------
 
 @app.get("/api/v1/schedule/today", response_model=List[ScheduleBlockSchema])
 async def get_today_schedule(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    today_str = datetime.date.today().isoformat()
-    blocks = db.query(ScheduleBlock).filter(
-        ScheduleBlock.user_id == current_user.id,
-        ScheduleBlock.scheduled_date == today_str
-    ).order_by(ScheduleBlock.start_time.asc()).all()
-    
-    if not blocks:
-        # Seed initial template if first time today
-        defaults = [
-            ScheduleBlock(user_id=current_user.id, title="WFH Focus Block (Ultradian 1)", block_type="FOCUS", start_time="08:00", end_time="09:30", duration_minutes=90, scheduled_date=today_str, status="UPCOMING"),
-            ScheduleBlock(user_id=current_user.id, title="WFH Execution Block (Ultradian 2)", block_type="FOCUS", start_time="10:00", end_time="11:30", duration_minutes=90, scheduled_date=today_str, status="UPCOMING"),
-            ScheduleBlock(user_id=current_user.id, title="15:30 Interceptor & Power Nap (NSDR)", block_type="TRANSITION", start_time="15:30", end_time="15:55", duration_minutes=25, scheduled_date=today_str, status="UPCOMING"),
-            ScheduleBlock(user_id=current_user.id, title="Dumbbell & Bench Strength Session", block_type="WORKOUT", start_time="16:00", end_time="16:45", duration_minutes=45, scheduled_date=today_str, status="UPCOMING"),
-            ScheduleBlock(user_id=current_user.id, title="SaaS Income Engine Deep Work", block_type="SAAS", start_time="17:00", end_time="18:30", duration_minutes=90, scheduled_date=today_str, status="UPCOMING"),
-        ]
-        db.add_all(defaults)
-        db.commit()
-        blocks = defaults
-        
+    blocks = ensure_full_day_schedule(db, current_user)
     return [
         ScheduleBlockSchema(
             id=b.id,
@@ -362,30 +372,7 @@ async def rebalance_schedule(
         db.commit()
     elif action in ("DELAY_15", "DELAY_30"):
         delay_mins = 15 if action == "DELAY_15" else 30
-        block.delay_count += 1
-        block.status = "DELAYED"
-        
-        # Calculate shifted times
-        def add_mins(time_str: str, mins: int) -> str:
-            parts = time_str.split(":")
-            h, m = int(parts[0]), int(parts[1])
-            tot = h * 60 + m + mins
-            return f"{((tot // 60) % 24):02d}:{tot % 60:02d}"
-            
-        block.start_time = add_mins(block.start_time, delay_mins)
-        block.end_time = add_mins(block.end_time, delay_mins)
-        
-        # Ripple forward upcoming blocks
-        upcoming = db.query(ScheduleBlock).filter(
-            ScheduleBlock.user_id == current_user.id,
-            ScheduleBlock.scheduled_date == block.scheduled_date,
-            ScheduleBlock.id > block.id,
-            ScheduleBlock.is_completed == False
-        ).all()
-        for ub in upcoming:
-            ub.start_time = add_mins(ub.start_time, delay_mins)
-            ub.end_time = add_mins(ub.end_time, delay_mins)
-        db.commit()
+        shift_remaining_blocks(db, current_user.id, block.scheduled_date, block.id, delay_mins)
 
     return {"status": "ok", "action": action}
 
@@ -401,12 +388,143 @@ async def complete_block(
     ).first()
     if not block:
         raise HTTPException(status_code=404, detail="Block not found")
-    block.is_completed = True
-    block.status = "COMPLETED"
+    block.is_completed = not block.is_completed
+    block.status = "COMPLETED" if block.is_completed else "UPCOMING"
     db.commit()
-    return {"status": "ok", "block_id": block_id}
+    return {"status": "ok", "block_id": block_id, "is_completed": block.is_completed}
 
-# ----------------- HABIT APIS (66-DAY AUTOMATICITY) -----------------
+# ----------------- AGENT CHAT & PROACTIVE INTELLIGENCE -----------------
+
+@app.get("/api/v1/agent/messages", response_model=List[ChatMessageSchema])
+async def get_agent_messages(
+    limit: int = 50,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    msgs = db.query(ChatMessage).filter(
+        ChatMessage.user_id == current_user.id
+    ).order_by(ChatMessage.created_at.desc()).limit(limit).all()
+    msgs.reverse()
+    
+    # If no messages yet, seed an initial friendly executive briefing
+    if not msgs:
+        init_msg = ChatMessage(
+            user_id=current_user.id,
+            sender="agent",
+            content=f"Good day, {current_user.username}. I have your schedule structured seamlessly from now until bedtime, including work blocks and physical resets. Tap any task to complete it, or talk to me anytime.",
+            message_type="TEXT"
+        )
+        db.add(init_msg)
+        db.commit()
+        db.refresh(init_msg)
+        msgs = [init_msg]
+        
+    return [
+        ChatMessageSchema(
+            id=m.id,
+            sender=m.sender,
+            content=m.content,
+            message_type=m.message_type,
+            actions_json=m.actions_json,
+            created_at=m.created_at
+        ) for m in msgs
+    ]
+
+@app.post("/api/v1/agent/chat")
+async def send_chat_message(
+    req: ChatSendRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    res = await handle_agent_dialogue(db, current_user, req.message)
+    return res
+
+@app.post("/api/v1/agent/proactive-check")
+async def trigger_proactive_check(
+    now_time: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    msg = await check_proactive_interventions(db, current_user, now_time)
+    if msg:
+        return {
+            "has_nudge": True,
+            "message": ChatMessageSchema(
+                id=msg.id,
+                sender=msg.sender,
+                content=msg.content,
+                message_type=msg.message_type,
+                actions_json=msg.actions_json,
+                created_at=msg.created_at
+            )
+        }
+    return {"has_nudge": False}
+
+@app.post("/api/v1/agent/actions/execute")
+async def execute_agent_action(
+    req: AgentActionExecuteRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    today_str = datetime.date.today().isoformat()
+    if req.action == "COMPLETE_BLOCK" and req.block_id:
+        b = db.query(ScheduleBlock).filter(ScheduleBlock.id == req.block_id, ScheduleBlock.user_id == current_user.id).first()
+        if b:
+            b.is_completed = True
+            b.status = "COMPLETED"
+            db.commit()
+    elif req.action == "DELAY_SCHEDULE":
+        mins = req.mins or 15
+        blocks = db.query(ScheduleBlock).filter(
+            ScheduleBlock.user_id == current_user.id,
+            ScheduleBlock.scheduled_date == today_str,
+            ScheduleBlock.is_completed == False
+        ).order_by(ScheduleBlock.start_time.asc()).all()
+        if blocks:
+            shift_remaining_blocks(db, current_user.id, today_str, blocks[0].id, mins)
+    elif req.action == "INJECT_PUSHUPS":
+        blocks = db.query(ScheduleBlock).filter(
+            ScheduleBlock.user_id == current_user.id,
+            ScheduleBlock.scheduled_date == today_str,
+            ScheduleBlock.is_completed == False
+        ).order_by(ScheduleBlock.start_time.asc()).all()
+        if blocks:
+            first_b = blocks[0]
+            nudge = ScheduleBlock(
+                user_id=current_user.id,
+                title="Physical Reset: 10 Pushups & Hydrate",
+                block_type="FITNESS_NUDGE",
+                start_time=first_b.start_time,
+                end_time=format_minutes_to_time(parse_time_to_minutes(first_b.start_time) + 10),
+                duration_minutes=10,
+                scheduled_date=today_str,
+                status="UPCOMING"
+            )
+            db.add(nudge)
+            db.commit()
+            shift_remaining_blocks(db, current_user.id, today_str, first_b.id, 10)
+
+    # Return updated schedule
+    updated_blocks = ensure_full_day_schedule(db, current_user)
+    return {
+        "status": "ok",
+        "schedule": [
+            ScheduleBlockSchema(
+                id=b.id,
+                title=b.title,
+                block_type=b.block_type,
+                start_time=b.start_time,
+                end_time=b.end_time,
+                duration_minutes=b.duration_minutes,
+                is_completed=b.is_completed,
+                status=b.status,
+                delay_count=b.delay_count,
+                scheduled_date=b.scheduled_date
+            ) for b in updated_blocks
+        ]
+    }
+
+# ----------------- HABIT APIS -----------------
 
 @app.get("/api/v1/habits", response_model=List[HabitSchema])
 async def get_habits(
@@ -441,7 +559,6 @@ async def toggle_habit(
         
     today_str = datetime.date.today().isoformat()
     if habit.last_completed_date == today_str:
-        # Already completed today: undo
         habit.last_completed_date = None
         habit.streak = max(0, habit.streak - 1)
         habit.current_day = max(1, habit.current_day - 1)
@@ -478,43 +595,11 @@ async def process_voice(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    today_str = datetime.date.today().isoformat()
-    blocks = db.query(ScheduleBlock).filter(
-        ScheduleBlock.user_id == current_user.id,
-        ScheduleBlock.scheduled_date == today_str
-    ).order_by(ScheduleBlock.start_time.asc()).all()
-
-    sys_prompt = """You are NEXUS Voice Orchestrator. The user speaks hands-free commands.
-Respond with concise JSON matching:
-{
-  "action": "DELAY_15" | "DELAY_30" | "COMPLETE" | "LOG_FRICTION" | "NONE",
-  "voice_response": "Short 1-sentence confirmation for Text-To-Speech audio output."
-}"""
-
-    res = await execute_chat(db, sys_prompt, f"User said: '{req.transcript}'", json_mode=True)
-    voice_resp_text = "I've noted that for your schedule."
-    action = "NONE"
-    
-    if res.get("success"):
-        try:
-            import json as pyjson
-            parsed = pyjson.loads(res.get("content", "{}"))
-            action = parsed.get("action", "NONE")
-            voice_resp_text = parsed.get("voice_response", voice_resp_text)
-        except Exception:
-            pass
-
-    # Apply action to current active block if needed
-    if action in ("DELAY_15", "DELAY_30") and blocks:
-        active = next((b for b in blocks if not b.is_completed), blocks[0])
-        delay = 15 if action == "DELAY_15" else 30
-        active.delay_count += 1
-        active.status = "DELAYED"
-        db.commit()
-
+    res = await handle_agent_dialogue(db, current_user, req.transcript)
+    blocks = ensure_full_day_schedule(db, current_user)
     return VoiceCommandResponse(
-        action_taken=action,
-        voice_response=voice_resp_text,
+        action_taken=res.get("action_taken", "NONE"),
+        voice_response=res.get("reply", "Updated your schedule."),
         updated_schedule=[
             ScheduleBlockSchema(
                 id=b.id,

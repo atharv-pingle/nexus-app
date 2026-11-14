@@ -80,15 +80,15 @@ class NexusApiClient(
         }
     }
 
-    suspend fun rebalanceSchedule(blockId: Long, action: String): Result<Boolean> = withContext(Dispatchers.IO) {
+    suspend fun completeBlock(blockId: Long): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
             val authToken = token() ?: return@withContext Result.failure(IllegalStateException("Not authenticated"))
-            val url = "${baseUrl()}/api/v1/schedule/rebalance?block_id=$blockId&action=$action"
+            val url = "${baseUrl()}/api/v1/schedule/blocks/$blockId/complete"
             val emptyBody = "".toRequestBody(jsonMediaType)
             val request = Request.Builder()
                 .url(url)
                 .header("Authorization", "Bearer $authToken")
-                .post(emptyBody)
+                .put(emptyBody)
                 .build()
 
             client.newCall(request).execute().use { response ->
@@ -99,15 +99,15 @@ class NexusApiClient(
         }
     }
 
-    suspend fun completeBlock(blockId: Long): Result<Boolean> = withContext(Dispatchers.IO) {
+    suspend fun rebalanceSchedule(blockId: Long, action: String): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
             val authToken = token() ?: return@withContext Result.failure(IllegalStateException("Not authenticated"))
-            val url = "${baseUrl()}/api/v1/schedule/blocks/$blockId/complete"
+            val url = "${baseUrl()}/api/v1/schedule/rebalance?block_id=$blockId&action=$action"
             val emptyBody = "".toRequestBody(jsonMediaType)
             val request = Request.Builder()
                 .url(url)
                 .header("Authorization", "Bearer $authToken")
-                .put(emptyBody)
+                .post(emptyBody)
                 .build()
 
             client.newCall(request).execute().use { response ->
@@ -153,6 +153,102 @@ class NexusApiClient(
 
             client.newCall(request).execute().use { response ->
                 Result.success(response.isSuccessful)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // ----------------- AGENT API CALLS -----------------
+
+    suspend fun fetchAgentMessages(): Result<List<ServerChatMessageDto>> = withContext(Dispatchers.IO) {
+        try {
+            val authToken = token() ?: return@withContext Result.failure(IllegalStateException("Not authenticated"))
+            val request = Request.Builder()
+                .url("${baseUrl()}/api/v1/agent/messages")
+                .header("Authorization", "Bearer $authToken")
+                .get()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: ""
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(IOException("HTTP ${response.code}: $bodyStr"))
+                }
+                val msgs = json.decodeFromString<List<ServerChatMessageDto>>(bodyStr)
+                Result.success(msgs)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun sendChatMessage(message: String): Result<ServerChatResponseDto> = withContext(Dispatchers.IO) {
+        try {
+            val authToken = token() ?: return@withContext Result.failure(IllegalStateException("Not authenticated"))
+            val payload = json.encodeToString(ServerChatSendDto(message = message))
+            val reqBody = payload.toRequestBody(jsonMediaType)
+            val request = Request.Builder()
+                .url("${baseUrl()}/api/v1/agent/chat")
+                .header("Authorization", "Bearer $authToken")
+                .post(reqBody)
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: ""
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(IOException("HTTP ${response.code}: $bodyStr"))
+                }
+                val resp = json.decodeFromString<ServerChatResponseDto>(bodyStr)
+                Result.success(resp)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun checkProactiveNudge(nowTime: String? = null): Result<ServerProactiveNudgeDto> = withContext(Dispatchers.IO) {
+        try {
+            val authToken = token() ?: return@withContext Result.failure(IllegalStateException("Not authenticated"))
+            val url = if (nowTime != null) "${baseUrl()}/api/v1/agent/proactive-check?now_time=$nowTime" else "${baseUrl()}/api/v1/agent/proactive-check"
+            val emptyBody = "".toRequestBody(jsonMediaType)
+            val request = Request.Builder()
+                .url(url)
+                .header("Authorization", "Bearer $authToken")
+                .post(emptyBody)
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: ""
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(IOException("HTTP ${response.code}: $bodyStr"))
+                }
+                val nudge = json.decodeFromString<ServerProactiveNudgeDto>(bodyStr)
+                Result.success(nudge)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun executeAgentAction(action: String, blockId: Long? = null, mins: Int? = null): Result<ServerActionExecuteResponseDto> = withContext(Dispatchers.IO) {
+        try {
+            val authToken = token() ?: return@withContext Result.failure(IllegalStateException("Not authenticated"))
+            val payload = json.encodeToString(ServerActionExecuteDto(action = action, block_id = blockId, mins = mins))
+            val reqBody = payload.toRequestBody(jsonMediaType)
+            val request = Request.Builder()
+                .url("${baseUrl()}/api/v1/agent/actions/execute")
+                .header("Authorization", "Bearer $authToken")
+                .post(reqBody)
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: ""
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(IOException("HTTP ${response.code}: $bodyStr"))
+                }
+                val res = json.decodeFromString<ServerActionExecuteResponseDto>(bodyStr)
+                Result.success(res)
             }
         } catch (e: Exception) {
             Result.failure(e)

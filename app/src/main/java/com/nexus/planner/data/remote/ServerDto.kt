@@ -48,3 +48,44 @@ data class ServerVoiceResponseDto(
     val voice_response: String = "",
     val updated_schedule: List<ServerScheduleBlockDto> = emptyList()
 )
+
+@Serializable
+data class ServerChatMessageDto(
+    val id: Long,
+    val sender: String,
+    val content: String,
+    val message_type: String = "TEXT",
+    val actions_json: String? = null,
+    val created_at: String? = null
+)
+
+@Serializable
+data class ServerChatSendDto(
+    val message: String
+)
+
+@Serializable
+data class ServerChatResponseDto(
+    val reply: String,
+    val action_taken: String = "NONE",
+    val schedule: List<ServerScheduleBlockDto> = emptyList()
+)
+
+@Serializable
+data class ServerProactiveNudgeDto(
+    val has_nudge: Boolean = false,
+    val message: ServerChatMessageDto? = null
+)
+
+@Serializable
+data class ServerActionExecuteDto(
+    val action: String,
+    val block_id: Long? = null,
+    val mins: Int? = null
+)
+
+@Serializable
+data class ServerActionExecuteResponseDto(
+    val status: String = "ok",
+    val schedule: List<ServerScheduleBlockDto> = emptyList()
+)
