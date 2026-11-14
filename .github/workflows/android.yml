@@ -49,7 +49,18 @@ jobs:
           set -o pipefail
           ./gradlew assembleRelease --stacktrace --no-daemon 2>&1 | tee /tmp/build.log
           mkdir -p release-dist
-          cp app/build/outputs/apk/release/*.apk release-dist/nexus-v1.0.0.${{ github.run_number }}.apk
+          RELEASE_APK=$(find app/build/outputs/apk/release -name "*.apk" ! -name "*-unsigned.apk" | head -n 1)
+          echo "Selected APK: $RELEASE_APK"
+          cp "$RELEASE_APK" release-dist/nexus-v1.0.0.${{ github.run_number }}.apk
+
+      - name: Verify Signed APK Integrity & Badging
+        env:
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          BUILD_TOOLS=$(find $ANDROID_HOME/build-tools -maxdepth 1 -mindepth 1 | sort -V | tail -n 1)
+          echo "Using build tools: $BUILD_TOOLS"
+          $BUILD_TOOLS/aapt dump badging release-dist/nexus-v1.0.0.${{ github.run_number }}.apk
+          $BUILD_TOOLS/apksigner verify --verbose --print-certs release-dist/nexus-v1.0.0.${{ github.run_number }}.apk
 
       - name: Report Build Error Log
         if: failure()
