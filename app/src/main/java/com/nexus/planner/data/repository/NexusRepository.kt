@@ -43,7 +43,6 @@ class NexusRepository(
                         category = b.block_type,
                         durationMinutes = b.duration_minutes,
                         status = b.status,
-                        delayCount = b.delay_count,
                         microAction = "",
                         sortOrder = idx
                     )

@@ -39,7 +39,9 @@ abstract class NexusDatabase : RoomDatabase() {
                     context.applicationContext,
                     NexusDatabase::class.java,
                     "nexus_planner.db"
-                ).build()
+                )
+                    .fallbackToDestructiveMigration()
+                    .build()
                 INSTANCE = instance
                 instance
             }
