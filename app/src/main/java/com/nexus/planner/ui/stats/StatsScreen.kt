@@ -20,7 +20,6 @@ import com.nexus.planner.ui.theme.*
 fun StatsScreen(
     pushupsCount: Int = 20,
     workoutStreak: Int = 19,
-    uclDay: Int = 20,
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -41,18 +40,18 @@ fun StatsScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Text("📈", fontSize = 14.sp)
+                        Text("📈", fontSize = 16.sp)
                         Text(
-                            text = "NEXUS TELEMETRY",
+                            text = "AI AGENT TELEMETRY",
                             fontFamily = FontFamily.Monospace,
-                            fontSize = 13.sp,
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.Bold,
                             letterSpacing = 1.sp,
                             color = Color.White
                         )
                     }
                     Text(
-                        text = "UCL automaticity and habit telemetry",
+                        text = "Focus planning velocity & execution status",
                         fontFamily = FontFamily.Monospace,
                         fontSize = 11.sp,
                         color = Zinc500,
@@ -67,7 +66,7 @@ fun StatsScreen(
                 )
             }
 
-            // UCL Automaticity Card (Zero Text Break, Solid Padding)
+            // Focus Planning Velocity Card (Replaced 66-day habit challenge)
             item {
                 Surface(
                     color = Zinc950,
@@ -86,7 +85,7 @@ fun StatsScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "AUTOMATICITY SCORE",
+                                text = "FOCUS PLANNING VELOCITY",
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.SemiBold,
@@ -94,7 +93,7 @@ fun StatsScreen(
                                 letterSpacing = 0.5.sp
                             )
                             Text(
-                                text = "Day $uclDay of 66",
+                                text = "85% Optimized",
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
@@ -102,8 +101,7 @@ fun StatsScreen(
                             )
                         }
 
-                        // Progress bar (UCL 66-day protocol: 20/66 ~ 30%)
-                        val progressFraction = (uclDay.toFloat() / 66f).coerceIn(0.05f, 1f)
+                        // Progress bar
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -112,7 +110,7 @@ fun StatsScreen(
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .fillMaxWidth(progressFraction)
+                                    .fillMaxWidth(0.85f)
                                     .fillMaxHeight()
                                     .background(Emerald400, RoundedCornerShape(4.dp))
                             )
@@ -124,22 +122,22 @@ fun StatsScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Phase 1: Friction Reduction",
+                                text = "Today: 3h 45m Focused",
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 11.sp,
                                 color = Zinc300
                             )
                             Text(
-                                text = "${(progressFraction * 100).toInt()}% Locked",
+                                text = "Tomorrow: 4h 15m Planned",
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Emerald400
+                                color = Color.White
                             )
                         }
 
                         Text(
-                            text = "Habits are transitioning into automatic reflexes with 42% lower daily resistance.",
+                            text = "When you snooze or postpone tasks, Nexus shifts subsequent blocks dynamically without cognitive friction.",
                             fontSize = 11.sp,
                             lineHeight = 16.sp,
                             color = Zinc400
@@ -148,7 +146,51 @@ fun StatsScreen(
                 }
             }
 
-            // Metrics Row: Pushups & Workout Streak
+            // Nightly Architect & Core Brain Rollover
+            item {
+                Surface(
+                    color = Zinc950,
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, Zinc800)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "CORE BRAIN ROLLOVER",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Zinc400,
+                                letterSpacing = 0.5.sp
+                            )
+                            Text(
+                                text = "🔄 Rollover Active",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFFBBF24)
+                            )
+                        }
+                        Text(
+                            text = "Any unfinished tasks from today automatically carry over into tomorrow's priority morning queue so nothing falls through the cracks.",
+                            fontSize = 11.sp,
+                            lineHeight = 16.sp,
+                            color = Zinc300
+                        )
+                    }
+                }
+            }
+
+            // Metrics Row: Pushups & Bedtime
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -178,10 +220,10 @@ fun StatsScreen(
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 22.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFFFBBF24) // Amber 400
+                                color = Color(0xFFFBBF24)
                             )
                             Text(
-                                text = "${pushupsCount / 10} challenges met",
+                                text = "${pushupsCount / 10} physical resets",
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 11.sp,
                                 color = Zinc400
@@ -189,7 +231,7 @@ fun StatsScreen(
                         }
                     }
 
-                    // Workout Streak Card
+                    // Bedtime Lock Card
                     Surface(
                         color = Zinc950,
                         shape = RoundedCornerShape(16.dp),
@@ -201,7 +243,7 @@ fun StatsScreen(
                             verticalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
-                                text = "WORKOUT STREAK",
+                                text = "BEDTIME LOCK",
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.SemiBold,
@@ -209,94 +251,20 @@ fun StatsScreen(
                                 letterSpacing = 0.5.sp
                             )
                             Text(
-                                text = "$workoutStreak Days",
+                                text = "23:30",
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 22.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = Color(0xFF60A5FA)
                             )
                             Text(
-                                text = "Shield active",
+                                text = "Wind-down: 22:30",
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Medium,
-                                color = Emerald400
+                                color = Color(0xFF93C5FD)
                             )
                         }
-                    }
-                }
-            }
-
-            // Bedtime Recovery Lock Card
-            item {
-                Surface(
-                    color = Zinc950,
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, Zinc800)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "BEDTIME LOCK",
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = Zinc400,
-                                letterSpacing = 0.5.sp
-                            )
-                            Text(
-                                text = "23:30 (Wind-down: 22:30)",
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF60A5FA)
-                            )
-                        }
-                        Text(
-                            text = "Nexus initiates screen wind-down 60 minutes prior to bedtime to ensure uninterrupted delta-wave sleep recovery.",
-                            fontSize = 11.sp,
-                            lineHeight = 16.sp,
-                            color = Zinc400
-                        )
-                    }
-                }
-            }
-
-            // Friction Adaptation Summary
-            item {
-                Surface(
-                    color = Zinc950,
-                    shape = RoundedCornerShape(16.dp),
-                    border = BorderStroke(1.dp, Zinc800)
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = "AI BEHAVIORAL INTERVENTION",
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Zinc500
-                        )
-                        Text(
-                            text = "Transition Nap Interceptor (15:30) successfully eliminated afternoon procrastination blocks.",
-                            fontSize = 11.sp,
-                            lineHeight = 16.sp,
-                            color = Emerald400
-                        )
                     }
                 }
             }

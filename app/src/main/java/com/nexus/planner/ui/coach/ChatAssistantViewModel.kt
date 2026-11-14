@@ -13,14 +13,17 @@ import kotlinx.coroutines.launch
 
 data class ChatAssistantUiState(
     val messages: List<ServerChatMessageDto> = emptyList(),
-    val schedule: List<ServerScheduleBlockDto> = emptyList(),
+    val todaySchedule: List<ServerScheduleBlockDto> = emptyList(),
+    val tomorrowSchedule: List<ServerScheduleBlockDto> = emptyList(),
+    val isAutoPlanEnabled: Boolean = true,
+    val activeAlarmTask: ServerScheduleBlockDto? = null,
     val showScheduleInChat: Boolean = false,
     val pushupsCount: Int = 20,
     val workoutStreak: Int = 19,
-    val uclDay: Int = 20,
     val isLoading: Boolean = false,
     val toastNotice: String? = null,
     val isVoiceModalOpen: Boolean = false,
+    val isAlarmMicListening: Boolean = false,
     val liveSpeechText: String = ""
 )
 
@@ -41,15 +44,21 @@ class ChatAssistantViewModel(
             
             // 1. Fetch Today's Tasks
             apiClient.fetchTodaySchedule().onSuccess { blocks ->
-                _uiState.update { it.copy(schedule = blocks) }
+                _uiState.update { it.copy(todaySchedule = blocks) }
             }
 
-            // 2. Fetch Chat History
+            // 2. Fetch Tomorrow's Tasks (triggers core brain carry-over)
+            apiClient.fetchTomorrowSchedule().onSuccess { blocks ->
+                _uiState.update { it.copy(tomorrowSchedule = blocks) }
+            }
+
+            // 3. Fetch Chat History (clean any raw asterisks)
             apiClient.fetchAgentMessages().onSuccess { msgs ->
-                _uiState.update { it.copy(messages = msgs) }
+                val cleaned = msgs.map { it.copy(content = it.content.replace("**", "")) }
+                _uiState.update { it.copy(messages = cleaned) }
             }
 
-            // 3. Proactive Check
+            // 4. Proactive Check
             checkProactiveNudge()
 
             _uiState.update { it.copy(isLoading = false) }
@@ -62,7 +71,8 @@ class ChatAssistantViewModel(
                 if (nudge.has_nudge && nudge.message != null) {
                     val currentMsgs = _uiState.value.messages.toMutableList()
                     if (currentMsgs.none { it.id == nudge.message.id }) {
-                        currentMsgs.add(nudge.message)
+                        val cleanedMsg = nudge.message.copy(content = nudge.message.content.replace("**", ""))
+                        currentMsgs.add(cleanedMsg)
                         _uiState.update { it.copy(messages = currentMsgs) }
                     }
                 }
@@ -75,7 +85,6 @@ class ChatAssistantViewModel(
         val trimmed = text.trim()
 
         viewModelScope.launch {
-            // Append optimistic user message
             val tempUserMsg = ServerChatMessageDto(
                 id = System.currentTimeMillis(),
                 sender = "user",
@@ -84,23 +93,29 @@ class ChatAssistantViewModel(
             )
             _uiState.update { it.copy(messages = it.messages + tempUserMsg, isLoading = true) }
 
-            // Send to agent API
             apiClient.sendChatMessage(trimmed).onSuccess { resp ->
+                val cleanReply = resp.reply.replace("**", "")
                 val agentMsg = ServerChatMessageDto(
                     id = System.currentTimeMillis() + 1,
                     sender = "agent",
-                    content = resp.reply,
+                    content = cleanReply,
                     message_type = "TEXT"
                 )
                 val isPushups = trimmed.contains("pushup", ignoreCase = true)
                 _uiState.update { 
                     it.copy(
                         messages = it.messages + agentMsg,
-                        schedule = if (resp.schedule.isNotEmpty()) resp.schedule else it.schedule,
+                        todaySchedule = if (resp.schedule.isNotEmpty()) resp.schedule else it.todaySchedule,
                         showScheduleInChat = resp.show_schedule_widget,
                         pushupsCount = if (isPushups) it.pushupsCount + 10 else it.pushupsCount,
                         isLoading = false
                     )
+                }
+                // Refresh tomorrow's schedule as well if user referenced tomorrow
+                if (trimmed.contains("tomorrow", ignoreCase = true)) {
+                    apiClient.fetchTomorrowSchedule().onSuccess { tomorrowBlocks ->
+                        _uiState.update { it.copy(tomorrowSchedule = tomorrowBlocks) }
+                    }
                 }
             }.onFailure { err ->
                 _uiState.update { 
@@ -113,51 +128,110 @@ class ChatAssistantViewModel(
         }
     }
 
-    fun toggleTask(blockId: Long) {
+    fun toggleTask(blockId: Long, isTomorrow: Boolean = false) {
         viewModelScope.launch {
-            // Optimistic update
-            val updated = _uiState.value.schedule.map {
-                if (it.id == blockId) it.copy(is_completed = !it.is_completed) else it
+            if (isTomorrow) {
+                val updated = _uiState.value.tomorrowSchedule.map {
+                    if (it.id == blockId) it.copy(is_completed = !it.is_completed) else it
+                }
+                _uiState.update { it.copy(tomorrowSchedule = updated) }
+            } else {
+                val updated = _uiState.value.todaySchedule.map {
+                    if (it.id == blockId) it.copy(is_completed = !it.is_completed) else it
+                }
+                _uiState.update { it.copy(todaySchedule = updated) }
             }
-            _uiState.update { it.copy(schedule = updated) }
 
             apiClient.completeBlock(blockId).onSuccess {
-                // Refresh schedule to stay in sync with server
-                apiClient.fetchTodaySchedule().onSuccess { blocks ->
-                    _uiState.update { it.copy(schedule = blocks) }
-                }
+                loadData()
             }
         }
     }
 
-    fun shiftSchedule(mins: Int) {
+    fun toggleAutoPlan() {
+        val next = !_uiState.value.isAutoPlanEnabled
+        _uiState.update { 
+            it.copy(
+                isAutoPlanEnabled = next,
+                toastNotice = if (next) "⚡ Auto-Plan ON: Agent optimizing schedule" else "Auto-Plan OFF: Showing static tasks"
+            ) 
+        }
+        loadData()
+    }
+
+    fun triggerAlarmForTask(task: ServerScheduleBlockDto) {
+        _uiState.update { it.copy(activeAlarmTask = task) }
+    }
+
+    fun dismissAlarm() {
+        _uiState.update { it.copy(activeAlarmTask = null, isAlarmMicListening = false) }
+    }
+
+    fun snoozeAlarm(mins: Int = 15) {
+        val active = _uiState.value.activeAlarmTask
+        dismissAlarm()
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, toastNotice = "Shifted schedule by +${mins}m") }
+            _uiState.update { it.copy(toastNotice = "⏱️ Snoozed +${mins}m. Schedule auto-rebalanced.") }
             apiClient.executeAgentAction(action = "DELAY_SCHEDULE", mins = mins).onSuccess { res ->
-                _uiState.update { it.copy(schedule = res.schedule, isLoading = false) }
-            }.onFailure {
-                _uiState.update { it.copy(isLoading = false) }
+                _uiState.update { it.copy(todaySchedule = res.schedule) }
             }
         }
     }
 
-    fun executeQuickAction(action: String, blockId: Long? = null, mins: Int? = null) {
+    fun handleTaskVoiceInstruction(blockId: Long?, command: String) {
+        dismissAlarm()
+        val lower = command.lowercase()
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
-            apiClient.executeAgentAction(action, blockId, mins).onSuccess { res ->
-                _uiState.update { 
-                    it.copy(
-                        schedule = res.schedule,
-                        isLoading = false,
-                        toastNotice = "Action updated with agent"
-                    )
-                }
-                // Also trigger proactive check to get any agent follow-up message
-                checkProactiveNudge()
-            }.onFailure {
-                _uiState.update { it.copy(isLoading = false) }
+            if (lower.contains("delay") || lower.contains("postpone") || lower.contains("snooze")) {
+                snoozeAlarm(20)
+                _uiState.update { it.copy(toastNotice = "⏱️ Delayed task by 20m via voice instruction") }
+            } else if (lower.contains("tomorrow") && blockId != null) {
+                // Postpone to tomorrow
+                _uiState.update { it.copy(toastNotice = "🔄 Moved task to Tomorrow") }
+                loadData()
+            } else if (blockId != null && (lower.contains("done") || lower.contains("complete") || lower.contains("finish"))) {
+                toggleTask(blockId)
+                _uiState.update { it.copy(toastNotice = "✓ Task marked complete via voice") }
+            } else {
+                sendMessage(command)
             }
         }
+    }
+
+    fun createQuickTask(title: String, startTime: String = "10:00", isTomorrow: Boolean = false) {
+        if (title.isBlank()) return
+        viewModelScope.launch {
+            apiClient.createQuickTask(title, startTime, isTomorrow).onSuccess { newBlock ->
+                if (isTomorrow) {
+                    _uiState.update { it.copy(tomorrowSchedule = listOf(newBlock) + it.tomorrowSchedule) }
+                } else {
+                    _uiState.update { it.copy(todaySchedule = listOf(newBlock) + it.todaySchedule) }
+                }
+                _uiState.update { it.copy(toastNotice = "Added '$title'") }
+            }
+        }
+    }
+
+    fun deleteTask(blockId: Long) {
+        viewModelScope.launch {
+            _uiState.update { 
+                it.copy(
+                    todaySchedule = it.todaySchedule.filter { b -> b.id != blockId },
+                    tomorrowSchedule = it.tomorrowSchedule.filter { b -> b.id != blockId },
+                    toastNotice = "Task deleted"
+                )
+            }
+            apiClient.deleteBlock(blockId)
+        }
+    }
+
+    fun recordPushups(count: Int = 10) {
+        _uiState.update { it.copy(pushupsCount = it.pushupsCount + count, toastNotice = "Boom! +$count Pushups logged 💪") }
+        sendMessage("✓ Completed $count pushups!")
+    }
+
+    fun dismissScheduleFromChat() {
+        _uiState.update { it.copy(showScheduleInChat = false) }
     }
 
     fun openVoiceModal() {
@@ -178,15 +252,6 @@ class ChatAssistantViewModel(
         if (text.isNotBlank()) {
             sendMessage(text)
         }
-    }
-
-    fun recordPushups(count: Int = 10) {
-        _uiState.update { it.copy(pushupsCount = it.pushupsCount + count, toastNotice = "Boom! +$count Pushups logged 💪") }
-        sendMessage("✓ Completed $count pushups!")
-    }
-
-    fun dismissScheduleFromChat() {
-        _uiState.update { it.copy(showScheduleInChat = false) }
     }
 
     fun clearToast() {

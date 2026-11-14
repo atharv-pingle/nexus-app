@@ -22,7 +22,7 @@ DEFAULT_SCHEDULE_TEMPLATE = [
 ]
 
 def ensure_full_day_schedule(db: Session, user: User, target_date: Optional[str] = None) -> List[ScheduleBlock]:
-    """Ensures user has a continuous full-day schedule fitting every hour until sleep."""
+    """Returns schedule blocks for the target date without injecting pre-filled dummy data."""
     if not target_date:
         target_date = datetime.date.today().isoformat()
         
@@ -31,30 +31,45 @@ def ensure_full_day_schedule(db: Session, user: User, target_date: Optional[str]
         ScheduleBlock.scheduled_date == target_date
     ).order_by(ScheduleBlock.start_time.asc()).all()
     
-    if not blocks:
-        new_blocks = []
-        for item in DEFAULT_SCHEDULE_TEMPLATE:
+    return blocks
+
+def rollover_incomplete_tasks(db: Session, user: User) -> List[ScheduleBlock]:
+    """Core brain: automatically carries over incomplete tasks from today into tomorrow's queue."""
+    today_str = datetime.date.today().isoformat()
+    tomorrow_str = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
+    
+    incomplete = db.query(ScheduleBlock).filter(
+        ScheduleBlock.user_id == user.id,
+        ScheduleBlock.scheduled_date == today_str,
+        ScheduleBlock.is_completed == False,
+        ScheduleBlock.block_type != "SLEEP"
+    ).all()
+    
+    carried = []
+    for inc in incomplete:
+        exists = db.query(ScheduleBlock).filter(
+            ScheduleBlock.user_id == user.id,
+            ScheduleBlock.scheduled_date == tomorrow_str,
+            ScheduleBlock.title == inc.title
+        ).first()
+        if not exists:
             b = ScheduleBlock(
                 user_id=user.id,
-                title=item["title"],
-                block_type=item["block_type"],
-                start_time=item["start_time"],
-                end_time=item["end_time"],
-                duration_minutes=item["duration_minutes"],
-                scheduled_date=target_date,
-                status="UPCOMING",
+                title=inc.title,
+                block_type=inc.block_type,
+                start_time=inc.start_time,
+                end_time=inc.end_time,
+                duration_minutes=inc.duration_minutes,
+                scheduled_date=tomorrow_str,
+                status="CARRIED_OVER",
                 is_completed=False,
                 delay_count=0
             )
-            new_blocks.append(b)
-        db.add_all(new_blocks)
+            db.add(b)
+            carried.append(b)
+    if carried:
         db.commit()
-        blocks = db.query(ScheduleBlock).filter(
-            ScheduleBlock.user_id == user.id,
-            ScheduleBlock.scheduled_date == target_date
-        ).order_by(ScheduleBlock.start_time.asc()).all()
-        
-    return blocks
+    return carried
 
 def parse_time_to_minutes(time_str: str) -> int:
     try:
@@ -312,12 +327,14 @@ Respond in JSON format:
     if "show" in lower or "what is my schedule" in lower or "what's next" in lower or "my plan" in lower:
         show_schedule_widget = True
 
+    is_for_tomorrow = "tomorrow" in lower
+    target_date_str = (datetime.date.today() + datetime.timedelta(days=1)).isoformat() if is_for_tomorrow else today_str
+
     # ---------------- EXECUTE AGENT ACTIONS ----------------
     if action == "ADD_TASK" and task_title:
         if not start_time:
-            # Slot in after active block or around afternoon
             first_upcoming = next((b for b in blocks if not b.is_completed and b.block_type != "SLEEP"), None)
-            start_time = first_upcoming.start_time if first_upcoming else "16:00"
+            start_time = first_upcoming.start_time if first_upcoming else "10:00"
             
         start_m = parse_time_to_minutes(start_time)
         end_time = format_minutes_to_time(start_m + duration_mins)
@@ -329,7 +346,7 @@ Respond in JSON format:
             start_time=start_time,
             end_time=end_time,
             duration_minutes=duration_mins,
-            scheduled_date=today_str,
+            scheduled_date=target_date_str,
             status="UPCOMING",
             is_completed=False,
             delay_count=0
@@ -340,7 +357,7 @@ Respond in JSON format:
         # Shift overlapping subsequent blocks
         overlapping = db.query(ScheduleBlock).filter(
             ScheduleBlock.user_id == user.id,
-            ScheduleBlock.scheduled_date == today_str,
+            ScheduleBlock.scheduled_date == target_date_str,
             ScheduleBlock.id != new_block.id,
             ScheduleBlock.is_completed == False,
             ScheduleBlock.block_type != "SLEEP"
@@ -348,10 +365,11 @@ Respond in JSON format:
         for ob in overlapping:
             ob_start_m = parse_time_to_minutes(ob.start_time)
             if start_m <= ob_start_m < (start_m + duration_mins):
-                shift_remaining_blocks(db, user.id, today_str, ob.id, duration_mins)
+                shift_remaining_blocks(db, user.id, target_date_str, ob.id, duration_mins)
                 break
                 
-        reply_text = f"Got it, Atharv! 🎯 Added **'{task_title}'** at **{start_time}–{end_time}** to your schedule. Check your **tasks** tab to view it live!"
+        day_label = "tomorrow" if is_for_tomorrow else "today"
+        reply_text = f"Got it, Atharv! 🎯 Added '{task_title}' for {day_label} at {start_time}–{end_time}. Check your tasks tab to view it!"
 
     elif action == "COMPLETE_TASK" and target_id:
         b = db.query(ScheduleBlock).filter(ScheduleBlock.id == target_id, ScheduleBlock.user_id == user.id).first()

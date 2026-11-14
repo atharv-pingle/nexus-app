@@ -29,6 +29,7 @@ from app.openrouter import (
 )
 from app.agent_service import (
     ensure_full_day_schedule,
+    rollover_incomplete_tasks,
     check_proactive_interventions,
     handle_agent_dialogue,
     shift_remaining_blocks,
@@ -359,6 +360,90 @@ async def get_today_schedule(
             scheduled_date=b.scheduled_date
         ) for b in blocks
     ]
+
+@app.get("/api/v1/schedule/tomorrow", response_model=List[ScheduleBlockSchema])
+async def get_tomorrow_schedule(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    tomorrow_str = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
+    # Core brain: automatically rollover unfinished tasks from today
+    rollover_incomplete_tasks(db, current_user)
+    blocks = ensure_full_day_schedule(db, current_user, target_date=tomorrow_str)
+    return [
+        ScheduleBlockSchema(
+            id=b.id,
+            title=b.title,
+            block_type=b.block_type,
+            start_time=b.start_time,
+            end_time=b.end_time,
+            duration_minutes=b.duration_minutes,
+            is_completed=b.is_completed,
+            status=b.status,
+            delay_count=b.delay_count,
+            scheduled_date=b.scheduled_date
+        ) for b in blocks
+    ]
+
+class QuickTaskCreateSchema(BaseModel):
+    title: str
+    start_time: str = "10:00"
+    duration_minutes: int = 45
+    scheduled_date: Optional[str] = None
+    block_type: str = "FOCUS"
+
+@app.post("/api/v1/schedule/blocks", response_model=ScheduleBlockSchema)
+async def create_quick_task(
+    payload: QuickTaskCreateSchema,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    target_date = payload.scheduled_date or datetime.date.today().isoformat()
+    start_m = parse_time_to_minutes(payload.start_time)
+    end_time = format_minutes_to_time(start_m + payload.duration_minutes)
+    
+    b = ScheduleBlock(
+        user_id=current_user.id,
+        title=payload.title,
+        block_type=payload.block_type,
+        start_time=payload.start_time,
+        end_time=end_time,
+        duration_minutes=payload.duration_minutes,
+        scheduled_date=target_date,
+        status="UPCOMING",
+        is_completed=False,
+        delay_count=0
+    )
+    db.add(b)
+    db.commit()
+    db.refresh(b)
+    return ScheduleBlockSchema(
+        id=b.id,
+        title=b.title,
+        block_type=b.block_type,
+        start_time=b.start_time,
+        end_time=b.end_time,
+        duration_minutes=b.duration_minutes,
+        is_completed=b.is_completed,
+        status=b.status,
+        delay_count=b.delay_count,
+        scheduled_date=b.scheduled_date
+    )
+
+@app.delete("/api/v1/schedule/blocks/{block_id}")
+async def delete_block(
+    block_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    block = db.query(ScheduleBlock).filter(
+        ScheduleBlock.id == block_id,
+        ScheduleBlock.user_id == current_user.id
+    ).first()
+    if block:
+        db.delete(block)
+        db.commit()
+    return {"status": "ok"}
 
 @app.post("/api/v1/schedule/rebalance")
 async def rebalance_schedule(

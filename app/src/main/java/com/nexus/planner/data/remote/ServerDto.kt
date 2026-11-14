@@ -90,3 +90,12 @@ data class ServerActionExecuteResponseDto(
     val status: String = "ok",
     val schedule: List<ServerScheduleBlockDto> = emptyList()
 )
+
+@Serializable
+data class ServerQuickTaskCreateDto(
+    val title: String,
+    val start_time: String = "10:00",
+    val duration_minutes: Int = 45,
+    val scheduled_date: String? = null,
+    val block_type: String = "FOCUS"
+)

@@ -31,6 +31,7 @@ import com.nexus.planner.ui.auth.LoginScreen
 import com.nexus.planner.ui.coach.ChatAssistantScreen
 import com.nexus.planner.ui.coach.ChatAssistantViewModel
 import com.nexus.planner.ui.tasks.TasksScreen
+import com.nexus.planner.ui.tasks.TaskAlarmOverlay
 import com.nexus.planner.ui.stats.StatsScreen
 import com.nexus.planner.ui.theme.*
 import kotlinx.coroutines.delay
@@ -83,150 +84,171 @@ class MainActivity : ComponentActivity() {
                     val chatState by chatViewModel.uiState.collectAsState()
                     val pivotTitles = listOf("chat", "tasks", "stats")
 
-                    Scaffold(
-                        topBar = {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(Black)
-                            ) {
-                                // Status / Profile Bar
-                                Surface(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(42.dp),
-                                    color = Black,
-                                    border = BorderStroke(1.dp, Zinc900)
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .padding(horizontal = 16.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(8.dp)
-                                                    .clip(CircleShape)
-                                                    .background(Emerald400)
-                                            )
-                                            Text(
-                                                text = "NEXUS // " + app.authManager.getUsername().uppercase(),
-                                                fontFamily = FontFamily.Monospace,
-                                                fontSize = 11.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = Zinc300
-                                            )
-                                        }
-
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                        ) {
-                                            Text(
-                                                text = "SYNC",
-                                                fontFamily = FontFamily.Monospace,
-                                                fontSize = 10.sp,
-                                                fontWeight = FontWeight.Bold,
-                                                color = Zinc400,
-                                                modifier = Modifier
-                                                    .clickable { chatViewModel.loadData() }
-                                                    .padding(4.dp)
-                                            )
-                                            Text(
-                                                text = "SIGN OUT",
-                                                fontFamily = FontFamily.Monospace,
-                                                fontSize = 10.sp,
-                                                color = Zinc500,
-                                                modifier = Modifier
-                                                    .clickable {
-                                                        lifecycleScope.launch {
-                                                            app.authManager.clearSession()
-                                                        }
-                                                    }
-                                                    .padding(4.dp)
-                                            )
-                                        }
-                                    }
-                                }
-
-                                // Windows Phone Metro Pivot Glanceable Typography Header
-                                val headerOffset = ((-80f) * (pagerState.currentPage + pagerState.currentPageOffsetFraction)).dp
-                                Box(
+                    Box(modifier = Modifier.fillMaxSize()) {
+                        Scaffold(
+                            topBar = {
+                                Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .background(Black)
-                                        .padding(top = 8.dp, bottom = 8.dp)
-                                        .clipToBounds()
                                 ) {
-                                    Row(
+                                    // Status / Profile Bar
+                                    Surface(
                                         modifier = Modifier
-                                            .offset(x = headerOffset)
-                                            .padding(start = 16.dp),
-                                        horizontalArrangement = Arrangement.spacedBy(28.dp),
-                                        verticalAlignment = Alignment.Bottom
+                                            .fillMaxWidth()
+                                            .height(42.dp),
+                                        color = Black,
+                                        border = BorderStroke(1.dp, Zinc900)
                                     ) {
-                                        pivotTitles.forEachIndexed { index, title ->
-                                            val isSelected = pagerState.currentPage == index
-                                            Text(
-                                                text = title,
-                                                fontSize = 32.sp,
-                                                fontFamily = FontFamily.Default,
-                                                fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Light,
-                                                letterSpacing = (-0.5).sp,
-                                                color = if (isSelected) Color.White else Zinc600,
-                                                modifier = Modifier
-                                                    .clickable {
-                                                        coroutineScope.launch {
-                                                            pagerState.animateScrollToPage(index)
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(horizontal = 16.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(8.dp)
+                                                        .clip(CircleShape)
+                                                        .background(Emerald400)
+                                                )
+                                                Text(
+                                                    text = "NEXUS // " + app.authManager.getUsername().uppercase(),
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Zinc300
+                                                )
+                                            }
+
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                            ) {
+                                                Text(
+                                                    text = "SYNC",
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Zinc400,
+                                                    modifier = Modifier
+                                                        .clickable { chatViewModel.loadData() }
+                                                        .padding(4.dp)
+                                                )
+                                                Text(
+                                                    text = "SIGN OUT",
+                                                    fontFamily = FontFamily.Monospace,
+                                                    fontSize = 10.sp,
+                                                    color = Zinc500,
+                                                    modifier = Modifier
+                                                        .clickable {
+                                                            lifecycleScope.launch {
+                                                                app.authManager.clearSession()
+                                                            }
                                                         }
-                                                    }
-                                            )
+                                                        .padding(4.dp)
+                                                )
+                                            }
                                         }
+                                    }
+
+                                    // Windows Phone Metro Pivot Glanceable Typography Header
+                                    val headerOffset = ((-80f) * (pagerState.currentPage + pagerState.currentPageOffsetFraction)).dp
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(Black)
+                                            .padding(top = 8.dp, bottom = 8.dp)
+                                            .clipToBounds()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .offset(x = headerOffset)
+                                                .padding(start = 16.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(28.dp),
+                                            verticalAlignment = Alignment.Bottom
+                                        ) {
+                                            pivotTitles.forEachIndexed { index, title ->
+                                                val isSelected = pagerState.currentPage == index
+                                                Text(
+                                                    text = title,
+                                                    fontSize = 32.sp,
+                                                    fontFamily = FontFamily.Default,
+                                                    fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Light,
+                                                    letterSpacing = (-0.5).sp,
+                                                    color = if (isSelected) Color.White else Zinc600,
+                                                    modifier = Modifier
+                                                        .clickable {
+                                                            coroutineScope.launch {
+                                                                pagerState.animateScrollToPage(index)
+                                                            }
+                                                        }
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(1.dp)
+                                            .background(Zinc900)
+                                    )
+                                }
+                            },
+                            containerColor = Black
+                        ) { innerPadding ->
+                            HorizontalPager(
+                                state = pagerState,
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(innerPadding)
+                            ) { page ->
+                                when (page) {
+                                    0 -> ChatAssistantScreen(
+                                        viewModel = chatViewModel,
+                                        onStartVoiceRecognition = {
+                                            voiceManager.startListening { transcript ->
+                                                chatViewModel.updateLiveSpeech(transcript)
+                                            }
+                                        }
+                                    )
+                                    1 -> TasksScreen(
+                                        todayTasks = chatState.todaySchedule,
+                                        tomorrowTasks = chatState.tomorrowSchedule,
+                                        isAutoPlanEnabled = chatState.isAutoPlanEnabled,
+                                        onToggleTask = { blockId, isTomorrow -> chatViewModel.toggleTask(blockId, isTomorrow) },
+                                        onToggleAutoPlan = { chatViewModel.toggleAutoPlan() },
+                                        onTriggerAlarm = { task -> chatViewModel.triggerAlarmForTask(task) },
+                                        onQuickAddTask = { title, isTomorrow -> chatViewModel.createQuickTask(title, isTomorrow = isTomorrow) },
+                                        onDeleteTask = { blockId -> chatViewModel.deleteTask(blockId) }
+                                    )
+                                    2 -> StatsScreen(
+                                        pushupsCount = chatState.pushupsCount,
+                                        workoutStreak = chatState.workoutStreak
+                                    )
+                                }
+                            }
+                        }
+
+                        // Full-Screen Task Alarm Modal Overlay (Pops up anywhere across the app)
+                        chatState.activeAlarmTask?.let { alarmTask ->
+                            TaskAlarmOverlay(
+                                task = alarmTask,
+                                onStartTask = { chatViewModel.dismissAlarm() },
+                                onSnooze = { mins -> chatViewModel.snoozeAlarm(mins) },
+                                onVoiceInstruction = { cmd -> chatViewModel.handleTaskVoiceInstruction(alarmTask.id, cmd) },
+                                onStartVoiceRecognition = {
+                                    voiceManager.startListening { transcript ->
+                                        chatViewModel.handleTaskVoiceInstruction(alarmTask.id, transcript)
                                     }
                                 }
-
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(1.dp)
-                                        .background(Zinc900)
-                                )
-                            }
-                        },
-                        containerColor = Black
-                    ) { innerPadding ->
-                        HorizontalPager(
-                            state = pagerState,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(innerPadding)
-                        ) { page ->
-                            when (page) {
-                                0 -> ChatAssistantScreen(
-                                    viewModel = chatViewModel,
-                                    onStartVoiceRecognition = {
-                                        voiceManager.startListening { transcript ->
-                                            chatViewModel.updateLiveSpeech(transcript)
-                                        }
-                                    }
-                                )
-                                1 -> TasksScreen(
-                                    tasks = chatState.schedule,
-                                    onToggleTask = { blockId -> chatViewModel.toggleTask(blockId) },
-                                    onShiftSchedule = { mins -> chatViewModel.shiftSchedule(mins) }
-                                )
-                                2 -> StatsScreen(
-                                    pushupsCount = chatState.pushupsCount,
-                                    workoutStreak = chatState.workoutStreak,
-                                    uclDay = chatState.uclDay
-                                )
-                            }
+                            )
                         }
                     }
                 }

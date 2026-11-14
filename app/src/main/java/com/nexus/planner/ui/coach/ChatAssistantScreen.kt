@@ -109,7 +109,7 @@ fun ChatAssistantScreen(
                 }
 
                 // Embedded Task List Section (Only shown on-demand when user asks)
-                if (state.showScheduleInChat && state.schedule.isNotEmpty()) {
+                if (state.showScheduleInChat && state.todaySchedule.isNotEmpty()) {
                     item {
                         Column(
                             modifier = Modifier
@@ -137,7 +137,7 @@ fun ChatAssistantScreen(
                                 )
                             }
                             TaskListSection(
-                                tasks = state.schedule,
+                                tasks = state.todaySchedule,
                                 onToggle = { blockId -> viewModel.toggleTask(blockId) },
                                 onShift = { mins -> viewModel.shiftSchedule(mins) }
                             )
@@ -162,9 +162,9 @@ fun ChatAssistantScreen(
                     OutlinedTextField(
                         value = inputText,
                         onValueChange = { inputText = it },
-                        placeholder = { Text("Message Nexus...", fontSize = 12.sp, color = Zinc500) },
+                        placeholder = { Text("Message Nexus...", fontSize = 14.sp, color = Zinc500) },
                         modifier = Modifier.weight(1f),
-                        textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
+                        textStyle = MaterialTheme.typography.bodyLarge.copy(color = Color.White, fontSize = 14.5.sp),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = Zinc600,
                             unfocusedBorderColor = Zinc800,
@@ -418,22 +418,24 @@ fun TaskListSection(
 
 @Composable
 fun UserMessageBubble(content: String) {
+    val cleanContent = remember(content) { content.replace("**", "") }
     Box(
         modifier = Modifier.fillMaxWidth(),
         contentAlignment = Alignment.CenterEnd
     ) {
         Surface(
-            color = Zinc900,
-            shape = RoundedCornerShape(topStart = 16.dp, topEnd = 4.dp, bottomStart = 16.dp, bottomEnd = 16.dp),
-            border = BorderStroke(1.dp, Zinc800),
-            modifier = Modifier.widthIn(max = 280.dp)
+            color = Zinc800,
+            shape = RoundedCornerShape(topStart = 18.dp, topEnd = 4.dp, bottomStart = 18.dp, bottomEnd = 18.dp),
+            border = BorderStroke(1.dp, Zinc700),
+            modifier = Modifier.widthIn(max = 300.dp)
         ) {
             Text(
-                text = content,
-                fontSize = 12.sp,
+                text = cleanContent,
+                fontSize = 14.5.sp,
+                fontWeight = FontWeight.Normal,
                 color = Color.White,
-                lineHeight = 18.sp,
-                modifier = Modifier.padding(12.dp)
+                lineHeight = 21.sp,
+                modifier = Modifier.padding(14.dp)
             )
         }
     }
@@ -452,6 +454,7 @@ fun AgentMessageBubble(
     actionsJson: String?,
     onActionClick: (String, Long?, Int?) -> Unit
 ) {
+    val cleanContent = remember(content) { content.replace("**", "") }
     val actionChips = remember(actionsJson) {
         val list = mutableListOf<ActionChipData>()
         if (!actionsJson.isNullOrBlank()) {
@@ -474,42 +477,41 @@ fun AgentMessageBubble(
 
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.Top
     ) {
         // Avatar
         Box(
             modifier = Modifier
-                .size(24.dp)
+                .size(30.dp)
                 .clip(CircleShape)
-                .background(Zinc800)
-                .border(1.dp, Zinc700, CircleShape),
+                .background(Emerald400),
             contentAlignment = Alignment.Center
         ) {
             Text(
                 text = "N",
                 fontFamily = FontFamily.Monospace,
                 fontWeight = FontWeight.Bold,
-                fontSize = 11.sp,
-                color = Color.White
+                fontSize = 13.sp,
+                color = Color.Black
             )
         }
 
         Column(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Surface(
-                color = Zinc950,
-                shape = RoundedCornerShape(topStart = 4.dp, topEnd = 16.dp, bottomStart = 16.dp, bottomEnd = 16.dp),
+                color = Zinc900,
+                shape = RoundedCornerShape(topStart = 4.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 18.dp),
                 border = BorderStroke(1.dp, Zinc800)
             ) {
                 Text(
-                    text = content,
-                    fontSize = 12.sp,
-                    color = Zinc300,
-                    lineHeight = 18.sp,
-                    modifier = Modifier.padding(12.dp)
+                    text = cleanContent,
+                    fontSize = 14.5.sp,
+                    color = Zinc100,
+                    lineHeight = 22.sp,
+                    modifier = Modifier.padding(14.dp)
                 )
             }
 

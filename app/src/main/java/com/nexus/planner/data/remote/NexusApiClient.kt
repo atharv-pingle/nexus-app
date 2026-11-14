@@ -80,6 +80,84 @@ class NexusApiClient(
         }
     }
 
+    suspend fun fetchTomorrowSchedule(): Result<List<ServerScheduleBlockDto>> = withContext(Dispatchers.IO) {
+        try {
+            val authToken = token() ?: return@withContext Result.failure(IllegalStateException("Not authenticated"))
+            val request = Request.Builder()
+                .url("${baseUrl()}/api/v1/schedule/tomorrow")
+                .header("Authorization", "Bearer $authToken")
+                .get()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: ""
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(IOException("HTTP ${response.code}: $bodyStr"))
+                }
+                val blocks = json.decodeFromString<List<ServerScheduleBlockDto>>(bodyStr)
+                Result.success(blocks)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun createQuickTask(title: String, startTime: String, isTomorrow: Boolean): Result<ServerScheduleBlockDto> = withContext(Dispatchers.IO) {
+        try {
+            val authToken = token() ?: return@withContext Result.failure(IllegalStateException("Not authenticated"))
+            val tomorrowStr = java.time.LocalDate.now().plusDays(1).toString()
+            val todayStr = java.time.LocalDate.now().toString()
+            val targetDate = if (isTomorrow) tomorrowStr else todayStr
+            val blockType = when {
+                title.contains("gym", ignoreCase = true) || title.contains("workout", ignoreCase = true) -> "WORKOUT"
+                title.contains("nap", ignoreCase = true) || title.contains("rest", ignoreCase = true) -> "TRANSITION"
+                title.contains("sleep", ignoreCase = true) -> "SLEEP"
+                else -> "FOCUS"
+            }
+            val payload = json.encodeToString(ServerQuickTaskCreateDto(
+                title = title,
+                start_time = startTime,
+                duration_minutes = 45,
+                scheduled_date = targetDate,
+                block_type = blockType
+            ))
+            val reqBody = payload.toRequestBody(jsonMediaType)
+            val request = Request.Builder()
+                .url("${baseUrl()}/api/v1/schedule/blocks")
+                .header("Authorization", "Bearer $authToken")
+                .post(reqBody)
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: ""
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(IOException("HTTP ${response.code}: $bodyStr"))
+                }
+                val block = json.decodeFromString<ServerScheduleBlockDto>(bodyStr)
+                Result.success(block)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteBlock(blockId: Long): Result<Boolean> = withContext(Dispatchers.IO) {
+        try {
+            val authToken = token() ?: return@withContext Result.failure(IllegalStateException("Not authenticated"))
+            val request = Request.Builder()
+                .url("${baseUrl()}/api/v1/schedule/blocks/$blockId")
+                .header("Authorization", "Bearer $authToken")
+                .delete()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                Result.success(response.isSuccessful)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun completeBlock(blockId: Long): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
             val authToken = token() ?: return@withContext Result.failure(IllegalStateException("Not authenticated"))
