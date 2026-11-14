@@ -2,6 +2,7 @@ package com.nexus.planner.ui.timeline
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.nexus.planner.data.local.entity.HabitEntity
 import com.nexus.planner.data.local.entity.ScheduleBlockEntity
 import com.nexus.planner.data.repository.NexusRepository
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -18,6 +19,9 @@ class TimelineViewModel(private val repository: NexusRepository) : ViewModel() {
     val schedule: StateFlow<List<ScheduleBlockEntity>> = repository.getTodaySchedule(todayIso)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
 
+    val habits: StateFlow<List<HabitEntity>> = repository.getAllHabits()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
+
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage
 
@@ -30,14 +34,21 @@ class TimelineViewModel(private val repository: NexusRepository) : ViewModel() {
     fun addDelay(minutes: Int) {
         viewModelScope.launch {
             repository.addDelayToRemainingDay(todayIso, minutes)
-            _statusMessage.value = "+${minutes}m delay absorbed cleanly."
+            _statusMessage.value = "+${minutes}m delay absorbed. Schedule updated."
         }
     }
 
     fun completeMicroAction(blockId: Long) {
         viewModelScope.launch {
             repository.updateBlockStatus(blockId, "COMPLETED")
-            _statusMessage.value = "Micro-step complete. Momentum locked."
+            _statusMessage.value = "Quest complete. Momentum locked."
+        }
+    }
+
+    fun applyGentleSwap(blockId: Long, counterAction: String) {
+        viewModelScope.launch {
+            repository.updateBlockStatus(blockId, "COMPLETED")
+            _statusMessage.value = "⚡ Streak preserved! Completed: $counterAction"
         }
     }
 
@@ -46,10 +57,6 @@ class TimelineViewModel(private val repository: NexusRepository) : ViewModel() {
             repository.updateBlockStatus(blockId, "SKIPPED")
             _statusMessage.value = "Task skipped. Time restored to buffer."
         }
-    }
-
-    fun startNapTimer() {
-        _statusMessage.value = "20m Power Nap active until reset."
     }
 
     fun clearStatusMessage() {

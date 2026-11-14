@@ -202,9 +202,9 @@ fun NexusBottomBar(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Tab: Timeline
+            // Tab: Today
             NavTabItem(
-                label = "Orbit",
+                label = "Today",
                 isSelected = currentRoute == Screen.Timeline.route,
                 onClick = { onNavigate(Screen.Timeline.route) }
             )
