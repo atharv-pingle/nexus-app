@@ -461,12 +461,39 @@ fun UserMessageBubble(content: String) {
     }
 }
 
+data class ActionChipData(
+    val label: String,
+    val action: String,
+    val blockId: Long? = null,
+    val mins: Int? = null
+)
+
 @Composable
 fun AgentMessageBubble(
     content: String,
     actionsJson: String?,
     onActionClick: (String, Long?, Int?) -> Unit
 ) {
+    val actionChips = remember(actionsJson) {
+        val list = mutableListOf<ActionChipData>()
+        if (!actionsJson.isNullOrBlank()) {
+            try {
+                val arr = JSONArray(actionsJson)
+                for (i in 0 until arr.length()) {
+                    val obj = arr.getJSONObject(i)
+                    val label = obj.optString("label", "Action")
+                    val action = obj.optString("action", "")
+                    val blockId = if (obj.has("block_id")) obj.getLong("block_id") else null
+                    val mins = if (obj.has("mins")) obj.getInt("mins") else null
+                    list.add(ActionChipData(label, action, blockId, mins))
+                }
+            } catch (e: Exception) {
+                // Ignore parse errors safely
+            }
+        }
+        list
+    }
+
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -509,38 +536,27 @@ fun AgentMessageBubble(
             }
 
             // Quick Action Chips
-            if (!actionsJson.isNullOrBlank()) {
-                try {
-                    val arr = JSONArray(actionsJson)
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        for (i in 0 until arr.length()) {
-                            val obj = arr.getJSONObject(i)
-                            val label = obj.optString("label", "Action")
-                            val action = obj.optString("action", "")
-                            val blockId = if (obj.has("block_id")) obj.getLong("block_id") else null
-                            val mins = if (obj.has("mins")) obj.getInt("mins") else null
-
-                            Surface(
-                                color = Zinc900,
-                                shape = RoundedCornerShape(6.dp),
-                                border = BorderStroke(1.dp, Zinc700),
-                                modifier = Modifier.clickable { onActionClick(action, blockId, mins) }
-                            ) {
-                                Text(
-                                    text = label,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    color = Color.White,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                            }
+            if (actionChips.isNotEmpty()) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    actionChips.forEach { chip ->
+                        Surface(
+                            color = Zinc900,
+                            shape = RoundedCornerShape(6.dp),
+                            border = BorderStroke(1.dp, Zinc700),
+                            modifier = Modifier.clickable { onActionClick(chip.action, chip.blockId, chip.mins) }
+                        ) {
+                            Text(
+                                text = chip.label,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color.White,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
                         }
                     }
-                } catch (e: Exception) {
-                    // Ignore JSON parse errors safely
                 }
             }
         }
