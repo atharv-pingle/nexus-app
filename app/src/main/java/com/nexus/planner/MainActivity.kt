@@ -156,7 +156,7 @@ class MainActivity : ComponentActivity() {
                                 }
 
                                 // Windows Phone Metro Pivot Glanceable Typography Header
-                                val headerOffset = (pagerState.currentPage + pagerState.currentPageOffsetFraction) * (-80).dp
+                                val headerOffset = ((-80f) * (pagerState.currentPage + pagerState.currentPageOffsetFraction)).dp
                                 Box(
                                     modifier = Modifier
                                         .fillMaxWidth()
