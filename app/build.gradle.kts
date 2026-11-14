@@ -45,15 +45,37 @@ android {
         }
     }
 
+    signingConfigs {
+        create("releaseKey") {
+            val keystoreFile = rootProject.file("nexus-release.jks")
+            if (keystoreFile.exists()) {
+                storeFile = keystoreFile
+                storePassword = "nexuspassword123"
+                keyAlias = "nexus"
+                keyPassword = "nexuspassword123"
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+                enableV4Signing = true
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("releaseKey")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
         }
+        debug {
+            // Sign debug with same key to guarantee seamless in-place updates on Nothing Phone
+            signingConfig = signingConfigs.getByName("releaseKey")
+        }
     }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

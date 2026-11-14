@@ -29,10 +29,7 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Cache Gradle Packages
+      - name: Cache Gradle Dependencies
         uses: actions/cache@v4
         with:
           path: |
@@ -43,39 +40,47 @@ jobs:
             ${{ runner.os }}-gradle-
 
       - name: Make Gradle Wrapper Executable
-        run: chmod +x gradlew || true
+        run: chmod +x gradlew
 
-      - name: Build Debug APK with Dynamic Versioning
+      - name: Build Signed APK with Dynamic Versioning
         env:
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
-          ./gradlew assembleDebug --stacktrace
+          ./gradlew assembleRelease assembleDebug --stacktrace
 
-      - name: Upload Debug APK Artifact
+      - name: Upload APK Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: nexus-app-v${{ github.run_number }}-debug
-          path: app/build/outputs/apk/debug/*.apk
+          name: nexus-app-v1.0.0.${{ github.run_number }}-apk
+          path: |
+            app/build/outputs/apk/release/*.apk
+            app/build/outputs/apk/debug/*.apk
           retention-days: 30
 
-      - name: Generate Release Notes & Create Release
-        if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
+      - name: Create GitHub Release
+        if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.${{ github.run_number }}
-          name: "Nexus v1.0.${{ github.run_number }}"
+          tag_name: v1.0.0.${{ github.run_number }}
+          name: "Nexus v1.0.0.${{ github.run_number }}"
           body: |
-            ### 🚀 Nexus Agentic Day Planner v1.0.${{ github.run_number }}
+            ### 🚀 Nexus Agentic Day Planner v1.0.0.${{ github.run_number }}
             
-            - **Build Number:** ${{ github.run_number }}
-            - **Commit:** ${{ github.sha }}
-            - **Features Included:**
-              - Dynamic Ultradian Day Scheduler
-              - 3:30 PM Work-Life Reset Interceptor (20m Power Nap / NSDR)
-              - Voice-First Interaction via OpenRouter Agent Engine
-              - 66-Day Habit & Friction Analytics
-              - Anti-Slop High-Contrast UI
+            - **Build Version:** `1.0.0.${{ github.run_number }}` (VersionCode: `${{ github.run_number }}`)
+            - **Commit SHA:** `${{ github.sha }}`
+            - **Device Compatibility:** Seamless in-place updates for Nothing OS / Android 14+ (Signed with consistent V1-V4 keys).
+            
+            #### 📦 Included Features:
+            - **Daily Orbit**: Dynamic Ultradian 75m/90m schedule with Parkinson rebalancing.
+            - **Transition Interceptor**: 15:30 work-to-life 20m power nap / NSDR timer.
+            - **Voice-First Interaction**: Hands-free agent mode via bottom center mic.
+            - **Nightly Architect**: OpenRouter-driven next-day generation & habit telemetry.
+            - **Anti-Slop UI**: High-contrast minimal typography.
+            
+            #### 📲 Installation:
+            Download and install the APK below directly on your phone. Future updates will replace and upgrade smoothly.
           files: |
+            app/build/outputs/apk/release/*.apk
             app/build/outputs/apk/debug/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
