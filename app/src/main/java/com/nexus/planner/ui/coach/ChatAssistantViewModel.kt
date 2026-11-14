@@ -14,6 +14,10 @@ import kotlinx.coroutines.launch
 data class ChatAssistantUiState(
     val messages: List<ServerChatMessageDto> = emptyList(),
     val schedule: List<ServerScheduleBlockDto> = emptyList(),
+    val showScheduleInChat: Boolean = false,
+    val pushupsCount: Int = 20,
+    val workoutStreak: Int = 19,
+    val uclDay: Int = 20,
     val isLoading: Boolean = false,
     val toastNotice: String? = null,
     val isVoiceModalOpen: Boolean = false,
@@ -88,10 +92,13 @@ class ChatAssistantViewModel(
                     content = resp.reply,
                     message_type = "TEXT"
                 )
+                val isPushups = trimmed.contains("pushup", ignoreCase = true)
                 _uiState.update { 
                     it.copy(
                         messages = it.messages + agentMsg,
                         schedule = if (resp.schedule.isNotEmpty()) resp.schedule else it.schedule,
+                        showScheduleInChat = resp.show_schedule_widget,
+                        pushupsCount = if (isPushups) it.pushupsCount + 10 else it.pushupsCount,
                         isLoading = false
                     )
                 }
@@ -171,6 +178,15 @@ class ChatAssistantViewModel(
         if (text.isNotBlank()) {
             sendMessage(text)
         }
+    }
+
+    fun recordPushups(count: Int = 10) {
+        _uiState.update { it.copy(pushupsCount = it.pushupsCount + count, toastNotice = "Boom! +$count Pushups logged 💪") }
+        sendMessage("✓ Completed $count pushups!")
+    }
+
+    fun dismissScheduleFromChat() {
+        _uiState.update { it.copy(showScheduleInChat = false) }
     }
 
     fun clearToast() {

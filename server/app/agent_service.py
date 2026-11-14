@@ -1,5 +1,6 @@
 import datetime
 import json
+import re
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 from app.models import User, ScheduleBlock, ChatMessage, Habit
@@ -102,7 +103,7 @@ async def check_proactive_interventions(db: Session, user: User, now_time_str: O
     now_mins = parse_time_to_minutes(now_time_str)
     blocks = ensure_full_day_schedule(db, user, today_str)
     
-    # Check last message timestamp to avoid spamming (minimum 15 mins between proactive nudges)
+    # Check last message timestamp to avoid spamming (minimum cooldown)
     last_msg = db.query(ChatMessage).filter(
         ChatMessage.user_id == user.id,
         ChatMessage.sender == "agent"
@@ -110,33 +111,28 @@ async def check_proactive_interventions(db: Session, user: User, now_time_str: O
     
     if last_msg:
         diff_secs = (datetime.datetime.utcnow() - last_msg.created_at).total_seconds()
-        if diff_secs < 120:  # Allow 2 min cooldown in testing/demo, or check content
+        if diff_secs < 120:
             return None
 
     # Find currently active block
     active_block = None
-    next_block = None
-    for i, b in enumerate(blocks):
+    for b in blocks:
         sm = parse_time_to_minutes(b.start_time)
         em = parse_time_to_minutes(b.end_time)
         if sm <= now_mins <= em:
             active_block = b
-            if i + 1 < len(blocks):
-                next_block = blocks[i + 1]
             break
-        elif now_mins < sm and not next_block:
-            next_block = b
 
     # Case 1: In a fitness nudge block or transition between work blocks
     if active_block and active_block.block_type == "FITNESS_NUDGE" and not active_block.is_completed:
         actions = [
-            {"id": "pushup_done", "label": "✓ Did 10 Pushups", "action": "COMPLETE_BLOCK", "block_id": active_block.id},
-            {"id": "push_10m", "label": "+10 min", "action": "DELAY_SCHEDULE", "mins": 10}
+            {"label": "💪 Did 10 Pushups!", "action": "COMPLETE_BLOCK", "block_id": active_block.id},
+            {"label": "⏱️ +10m", "action": "DELAY_SCHEDULE", "mins": 10}
         ]
         msg = ChatMessage(
             user_id=user.id,
             sender="agent",
-            content=f"Time for a quick physical reset! Step away from the screen and knock out 10 pushups + drink a full glass of water.",
+            content="Time for a quick physical reset! Drop and knock out 10 pushups + drink water right now 💥.",
             message_type="FITNESS_NUDGE",
             actions_json=json.dumps(actions)
         )
@@ -155,14 +151,14 @@ async def check_proactive_interventions(db: Session, user: User, now_time_str: O
             
     if overdue_block:
         actions = [
-            {"id": "done_task", "label": "✓ Completed", "action": "COMPLETE_BLOCK", "block_id": overdue_block.id},
-            {"id": "push_20m", "label": "+20m Push", "action": "DELAY_SCHEDULE", "mins": 20},
-            {"id": "pushup_break", "label": "Add 10 Pushups Break", "action": "INJECT_PUSHUPS"}
+            {"label": "✓ Yes, Done!", "action": "COMPLETE_BLOCK", "block_id": overdue_block.id},
+            {"label": "⏱️ +15m Shift", "action": "DELAY_SCHEDULE", "mins": 15},
+            {"label": "💪 10 Pushups Break", "action": "INJECT_PUSHUPS"}
         ]
         msg = ChatMessage(
             user_id=user.id,
             sender="agent",
-            content=f"Checking in on '{overdue_block.title}'. Still working on it, or should I mark it finished and shift the rest of your day?",
+            content=f"Checking in on '{overdue_block.title}' 🎯. Are you finished, or should I shift your schedule by +15m?",
             message_type="CHECKIN",
             actions_json=json.dumps(actions)
         )
@@ -175,13 +171,12 @@ async def check_proactive_interventions(db: Session, user: User, now_time_str: O
     bed_mins = parse_time_to_minutes(user.bedtime or "23:30")
     if bed_mins - 60 <= now_mins <= bed_mins:
         actions = [
-            {"id": "review_ready", "label": "Review Tomorrow", "action": "REVIEW_TOMORROW"},
-            {"id": "sleep_ready", "label": "Goodnight Nexus", "action": "GOODNIGHT"}
+            {"label": "🌙 Goodnight Nexus", "action": "GOODNIGHT"}
         ]
         msg = ChatMessage(
             user_id=user.id,
             sender="agent",
-            content="We're approaching your bedtime wind-down. Screen brightness down, wrap up any open tabs, and let's lock in your recovery for tomorrow.",
+            content="We're approaching your 23:30 bedtime wind-down 🌙. Dim screens, wrap up any tabs, and let's lock in your recovery for tomorrow.",
             message_type="CHECKIN",
             actions_json=json.dumps(actions)
         )
@@ -196,7 +191,7 @@ async def handle_agent_dialogue(db: Session, user: User, user_text: str) -> Dict
     """
     Main conversational agent brain:
     Processes user input, accesses user memory & live schedule,
-    applies schedule/fitness adjustments, and returns an executive assistant response.
+    applies schedule/fitness adjustments, adds tasks dynamically, and returns an executive assistant response.
     """
     today_str = datetime.date.today().isoformat()
     blocks = ensure_full_day_schedule(db, user, today_str)
@@ -222,30 +217,41 @@ async def handle_agent_dialogue(db: Session, user: User, user_text: str) -> Dict
     sys_prompt = f"""You are NEXUS, an autonomous, highly capable personal executive assistant.
 You actively manage Atharv's time, focus, and physical fitness throughout the entire day until sleep ({user.bedtime or '23:30'}).
 Key responsibilities:
-1. Always be direct, supportive, and action-oriented. No corporate fluff, no gaming jargon (no "quests" or "XP").
-2. Proactively inject physical fitness habits (e.g. "10 pushups", hydration, sunlight walks) to maintain peak energy.
-3. If Atharv says a meeting ran over, or he's tired, or asks for an update, adapt the schedule smoothly with zero guilt.
-4. Always maintain a continuous plan until bedtime.
+1. Always be direct, supportive, and action-oriented with motivating contextual emojis (🎯, 💪, ⚡, 🔋, 🌙, 🚀, 💥, 👋, ⏱️).
+2. If Atharv asks to add a task (e.g. "add task to review PR at 4 PM" or "add grocery shopping at 7 PM"), set action="ADD_TASK", specify task_title, start_time (HH:MM 24h format), and duration_minutes (default 30).
+3. If Atharv completed a task or did pushups, set action="COMPLETE_TASK".
+4. If Atharv asks to show schedule or see his tasks, set show_schedule_widget=true.
+5. If Atharv says a meeting ran over or asks to delay, set action="DELAY_SCHEDULE" and specify delay_minutes.
 
 CURRENT SCHEDULE TODAY:
 {sched_text}
 
 Respond in JSON format:
 {{
-  "reply": "Concise natural response speaking directly to Atharv.",
-  "action": "NONE" | "COMPLETE_TASK" | "DELAY_SCHEDULE" | "ADD_PUSHUPS" | "REORGANIZE_DAY",
+  "reply": "Conversational reply speaking directly to Atharv with contextual emojis.",
+  "action": "NONE" | "ADD_TASK" | "COMPLETE_TASK" | "DELAY_SCHEDULE" | "ADD_PUSHUPS",
+  "task_title": null or string,
+  "start_time": null or "HH:MM",
+  "duration_minutes": 30,
+  "block_type": "FOCUS" | "FITNESS_NUDGE" | "WORKOUT" | "TRANSITION" | "SAAS",
   "target_block_id": null or integer block id,
   "delay_minutes": 0 or integer,
+  "show_schedule_widget": false,
   "quick_actions": [
-     {{"label": "Label", "action": "ACTION_TYPE"}}
+     {{"label": "Label with emoji", "action": "ACTION_TYPE"}}
   ]
 }}"""
 
     res = await execute_chat(db, sys_prompt, f"Atharv: {user_text}", json_mode=True)
-    reply_text = "I've noted that and updated your schedule."
+    reply_text = "Got it, Atharv! 🚀 Synced with your memory and day timeline."
     action = "NONE"
+    task_title = None
+    start_time = None
+    duration_mins = 30
+    block_type = "FOCUS"
     target_id = None
     delay_mins = 0
+    show_schedule_widget = False
     quick_actions = []
 
     if res.get("success"):
@@ -253,56 +259,112 @@ Respond in JSON format:
             parsed = json.loads(res.get("content", "{}"))
             reply_text = parsed.get("reply", reply_text)
             action = parsed.get("action", "NONE")
+            task_title = parsed.get("task_title")
+            start_time = parsed.get("start_time")
+            duration_mins = parsed.get("duration_minutes", 30)
+            block_type = parsed.get("block_type", "FOCUS")
             target_id = parsed.get("target_block_id")
             delay_mins = parsed.get("delay_minutes", 0)
+            show_schedule_widget = parsed.get("show_schedule_widget", False)
             quick_actions = parsed.get("quick_actions", [])
         except Exception as e:
             print("Error parsing LLM JSON:", e)
 
-    # Fallback keyword checks if LLM is concise or in case of format anomaly
+    # Fallback heuristic intent detection
     lower = user_text.lower()
-    if "pushup" in lower and ("did" in lower or "done" in lower or "finished" in lower):
+    if ("add " in lower or "schedule " in lower or "new task" in lower) and not task_title:
+        action = "ADD_TASK"
+        # Extract title and possible time
+        clean_title = re.sub(r'^(please\s+)?(add|schedule|create)(\s+a)?(\s+task)?(\s+to)?\s+', '', user_text, flags=re.IGNORECASE).strip()
+        time_match = re.search(r'at\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)', clean_title, flags=re.IGNORECASE)
+        if time_match:
+            time_str = time_match.group(1).lower().strip()
+            clean_title = clean_title.replace(time_match.group(0), '').strip()
+            # Parse hour
+            try:
+                if "pm" in time_str:
+                    h = int(re.sub(r'[^\d]', '', time_str.split(':')[0]))
+                    if h < 12: h += 12
+                    start_time = f"{h:02d}:00"
+                elif "am" in time_str:
+                    h = int(re.sub(r'[^\d]', '', time_str.split(':')[0]))
+                    start_time = f"{h:02d}:00"
+                else:
+                    parts = time_str.split(':')
+                    start_time = f"{int(parts[0]):02d}:{int(parts[1]) if len(parts) > 1 else 0:02d}"
+            except Exception:
+                start_time = "16:00"
+        task_title = clean_title.strip() or "New Focused Task"
+
+    if "pushup" in lower and ("did" in lower or "done" in lower or "finished" in lower or "crushed" in lower):
         action = "COMPLETE_TASK"
-        # Find fitness block
         for b in blocks:
             if b.block_type == "FITNESS_NUDGE" and not b.is_completed:
                 target_id = b.id
                 break
-        reply_text = "Great job knocking out those 10 pushups! Bloodflow restored. Ready for the next focus block."
+        reply_text = "Boom! 💥 10 Pushups logged into your telemetry. Bloodflow restored and momentum locked! 🚀"
+
     elif "delay" in lower or "push" in lower or "ran over" in lower or "late" in lower:
         if delay_mins == 0:
-            delay_mins = 20
+            delay_mins = 15
         action = "DELAY_SCHEDULE"
 
-    # Execute actions
-    if action == "COMPLETE_TASK" and target_id:
+    if "show" in lower or "what is my schedule" in lower or "what's next" in lower or "my plan" in lower:
+        show_schedule_widget = True
+
+    # ---------------- EXECUTE AGENT ACTIONS ----------------
+    if action == "ADD_TASK" and task_title:
+        if not start_time:
+            # Slot in after active block or around afternoon
+            first_upcoming = next((b for b in blocks if not b.is_completed and b.block_type != "SLEEP"), None)
+            start_time = first_upcoming.start_time if first_upcoming else "16:00"
+            
+        start_m = parse_time_to_minutes(start_time)
+        end_time = format_minutes_to_time(start_m + duration_mins)
+        
+        new_block = ScheduleBlock(
+            user_id=user.id,
+            title=task_title,
+            block_type=block_type,
+            start_time=start_time,
+            end_time=end_time,
+            duration_minutes=duration_mins,
+            scheduled_date=today_str,
+            status="UPCOMING",
+            is_completed=False,
+            delay_count=0
+        )
+        db.add(new_block)
+        db.commit()
+        
+        # Shift overlapping subsequent blocks
+        overlapping = db.query(ScheduleBlock).filter(
+            ScheduleBlock.user_id == user.id,
+            ScheduleBlock.scheduled_date == today_str,
+            ScheduleBlock.id != new_block.id,
+            ScheduleBlock.is_completed == False,
+            ScheduleBlock.block_type != "SLEEP"
+        ).all()
+        for ob in overlapping:
+            ob_start_m = parse_time_to_minutes(ob.start_time)
+            if start_m <= ob_start_m < (start_m + duration_mins):
+                shift_remaining_blocks(db, user.id, today_str, ob.id, duration_mins)
+                break
+                
+        reply_text = f"Got it, Atharv! 🎯 Added **'{task_title}'** at **{start_time}–{end_time}** to your schedule. Check your **tasks** tab to view it live!"
+
+    elif action == "COMPLETE_TASK" and target_id:
         b = db.query(ScheduleBlock).filter(ScheduleBlock.id == target_id, ScheduleBlock.user_id == user.id).first()
         if b:
             b.is_completed = True
             b.status = "COMPLETED"
             db.commit()
+
     elif action == "DELAY_SCHEDULE" and delay_mins > 0:
-        # Shift incomplete blocks
         first_inc = next((b for b in blocks if not b.is_completed), None)
         if first_inc:
             shift_remaining_blocks(db, user.id, today_str, first_inc.id, delay_mins)
-    elif action == "ADD_PUSHUPS":
-        # Inject 10 pushups block before next focus block
-        first_inc = next((b for b in blocks if not b.is_completed), None)
-        if first_inc:
-            nudge = ScheduleBlock(
-                user_id=user.id,
-                title="Physical Reset: 10 Pushups & Hydrate",
-                block_type="FITNESS_NUDGE",
-                start_time=first_inc.start_time,
-                end_time=format_minutes_to_time(parse_time_to_minutes(first_inc.start_time) + 10),
-                duration_minutes=10,
-                scheduled_date=today_str,
-                status="UPCOMING"
-            )
-            db.add(nudge)
-            db.commit()
-            shift_remaining_blocks(db, user.id, today_str, first_inc.id, 10)
+            reply_text = f"Understood! ⏱️ Shifted your remaining afternoon schedule by +{delay_mins} mins without guilt."
 
     # Save agent response to chat history
     agent_msg = ChatMessage(
@@ -326,6 +388,7 @@ Respond in JSON format:
         "reply": reply_text,
         "message_id": agent_msg.id,
         "action_taken": action,
+        "show_schedule_widget": show_schedule_widget,
         "schedule": [
             {
                 "id": b.id,

@@ -68,6 +68,7 @@ data class ServerChatSendDto(
 data class ServerChatResponseDto(
     val reply: String,
     val action_taken: String = "NONE",
+    val show_schedule_widget: Boolean = false,
     val schedule: List<ServerScheduleBlockDto> = emptyList()
 )
 

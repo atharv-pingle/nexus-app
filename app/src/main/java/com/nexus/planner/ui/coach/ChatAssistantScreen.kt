@@ -61,58 +61,6 @@ fun ChatAssistantScreen(
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
 
-            // Top App Bar
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp),
-                color = Black,
-                border = BorderStroke(1.dp, Zinc900)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(Emerald400)
-                        )
-                        Text(
-                            text = "NEXUS // LIVE ASSISTANT",
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 12.sp,
-                            color = Color.White
-                        )
-                    }
-
-                    Surface(
-                        color = Zinc900,
-                        shape = RoundedCornerShape(6.dp),
-                        border = BorderStroke(1.dp, Zinc800),
-                        modifier = Modifier.clickable { viewModel.loadData() }
-                    ) {
-                        Text(
-                            text = "SYNC",
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Zinc400,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
-                }
-            }
-
             // Message Stream
             LazyColumn(
                 state = listState,
@@ -132,7 +80,7 @@ fun ChatAssistantScreen(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "TODAY • ACTIVE TIMELINE",
+                            text = "TODAY • ACTIVE CONVERSATION",
                             fontFamily = FontFamily.Monospace,
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Medium,
@@ -150,20 +98,50 @@ fun ChatAssistantScreen(
                             content = msg.content,
                             actionsJson = msg.actions_json,
                             onActionClick = { action, blockId, mins ->
-                                viewModel.executeQuickAction(action, blockId, mins)
+                                if (action == "INJECT_PUSHUPS") {
+                                    viewModel.recordPushups(10)
+                                } else {
+                                    viewModel.executeQuickAction(action, blockId, mins)
+                                }
                             }
                         )
                     }
                 }
 
-                // Embedded Task List Section (Continuous Schedule until Sleep)
-                if (state.schedule.isNotEmpty()) {
+                // Embedded Task List Section (Only shown on-demand when user asks)
+                if (state.showScheduleInChat && state.schedule.isNotEmpty()) {
                     item {
-                        TaskListSection(
-                            tasks = state.schedule,
-                            onToggle = { blockId -> viewModel.toggleTask(blockId) },
-                            onShift = { mins -> viewModel.shiftSchedule(mins) }
-                        )
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 6.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "SCHEDULE PREVIEW",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 10.sp,
+                                    color = Emerald400
+                                )
+                                Text(
+                                    text = "DISMISS",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 10.sp,
+                                    color = Zinc500,
+                                    modifier = Modifier.clickable { viewModel.dismissScheduleFromChat() }
+                                )
+                            }
+                            TaskListSection(
+                                tasks = state.schedule,
+                                onToggle = { blockId -> viewModel.toggleTask(blockId) },
+                                onShift = { mins -> viewModel.shiftSchedule(mins) }
+                            )
+                        }
                     }
                 }
             }
