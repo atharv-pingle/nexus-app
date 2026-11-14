@@ -53,9 +53,9 @@ jobs:
       - name: Dump Error Annotation If Failed
         if: steps.gradle_build.outcome != 'success'
         run: |
-          ERROR_SUMMARY=$(tail -n 25 build.log | tr '\n' ' ')
-          echo "::error title=Gradle Build Error::$ERROR_SUMMARY"
-          tail -n 60 build.log
+          grep -A 30 "FAILURE: Build failed with an exception" build.log || tail -n 50 build.log
+          ERROR_MSG=$(grep -A 10 "FAILURE: Build failed with an exception" build.log | tr '\n' ' ' || tail -n 20 build.log | tr '\n' ' ')
+          echo "::error title=Build Failure::$ERROR_MSG"
           exit 1
 
       - name: Upload APK Artifact
