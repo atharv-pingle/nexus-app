@@ -5,7 +5,7 @@ from typing import Optional, Dict, Any, List
 from sqlalchemy.orm import Session
 from app.models import ServerSetting
 
-DEFAULT_OPENROUTER_MODEL = "deepseek/deepseek-r1"
+DEFAULT_OPENROUTER_MODEL = "openrouter/free"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 def get_setting(db: Session, key: str, default: str = "") -> str:
@@ -23,7 +23,7 @@ def set_setting(db: Session, key: str, value: str):
         setting.value = value
     db.commit()
 
-async def test_openrouter_key(api_key: str) -> Dict[str, Any]:
+async def test_openrouter_key(api_key: str, model: Optional[str] = None) -> Dict[str, Any]:
     if not api_key:
         return {"success": False, "error": "API Key is empty"}
     headers = {
@@ -31,16 +31,19 @@ async def test_openrouter_key(api_key: str) -> Dict[str, Any]:
         "HTTP-Referer": "https://nexus-app.internal",
         "X-Title": "Nexus Admin"
     }
+    target_model = (model or "").strip() or DEFAULT_OPENROUTER_MODEL
     payload = {
-        "model": "deepseek/deepseek-r1",
+        "model": target_model,
         "messages": [{"role": "user", "content": "ping"}],
-        "max_tokens": 5
+        "max_tokens": 10
     }
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(OPENROUTER_URL, headers=headers, json=payload)
             if resp.status_code == 200:
-                return {"success": True, "message": "OpenRouter Key is valid!"}
+                data = resp.json()
+                reply = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+                return {"success": True, "message": f"OpenRouter Key is valid! Model '{target_model}' responded: '{reply or 'OK'}'"}
             else:
                 return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
     except Exception as e:

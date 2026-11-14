@@ -295,13 +295,25 @@
                         </div>
 
                         <div style="margin-bottom: 20px;">
-                            <label class="mono">Default Intelligence Model</label>
-                            <select id="default-model">
-                                <option value="deepseek/deepseek-r1">DeepSeek R1 (Autonomous Reasoning / Anti-procrastination)</option>
-                                <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
-                                <option value="meta-llama/llama-3.3-70b-instruct">Llama 3.3 70B Instruct</option>
-                                <option value="openai/gpt-4o">OpenAI GPT-4o</option>
-                            </select>
+                            <label class="mono">Active AI Model (Free / Custom)</label>
+                            <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+                                <select id="model-presets" onchange="onPresetSelect(this.value)">
+                                    <option value="">-- Choose Free / Popular Model Preset --</option>
+                                    <option value="openrouter/free">openrouter/free (Auto Free Model)</option>
+                                    <option value="deepseek/deepseek-chat:free">deepseek/deepseek-chat:free</option>
+                                    <option value="meta-llama/llama-3.3-70b-instruct:free">meta-llama/llama-3.3-70b-instruct:free</option>
+                                    <option value="google/gemma-4-31b-it:free">google/gemma-4-31b-it:free</option>
+                                    <option value="google/gemma-4-26b-a4b-it:free">google/gemma-4-26b-a4b-it:free</option>
+                                    <option value="nvidia/nemotron-3.5-lightning:free">nvidia/nemotron-3.5-lightning:free</option>
+                                    <option value="qwen/qwen-2.5-coder-32b-instruct:free">qwen/qwen-2.5-coder-32b-instruct:free</option>
+                                    <option value="anthropic/claude-3.5-sonnet">anthropic/claude-3.5-sonnet (Paid)</option>
+                                    <option value="openai/gpt-4o">openai/gpt-4o (Paid)</option>
+                                </select>
+                            </div>
+                            <input type="text" id="default-model" placeholder="Enter model ID e.g. openrouter/free or deepseek/deepseek-chat:free">
+                            <div style="font-size: 0.75rem; color: #71717a; margin-top: 6px;">
+                                You can choose a free preset above or type any model ID directly from <a href="https://openrouter.ai/models" target="_blank" style="color: #a1a1aa; text-decoration: underline;">openrouter.ai/models</a>.
+                            </div>
                         </div>
 
                         <div style="display: flex; gap: 12px;">
@@ -475,6 +487,12 @@
             }
         }
 
+        function onPresetSelect(val) {
+            if (val) {
+                document.getElementById('default-model').value = val;
+            }
+        }
+
         // AI SETTINGS
         async function loadAiSettings() {
             try {
@@ -485,6 +503,10 @@
                 }
                 if (settings.default_model) {
                     document.getElementById('default-model').value = settings.default_model;
+                    const presetEl = document.getElementById('model-presets');
+                    if (presetEl) {
+                        presetEl.value = settings.default_model;
+                    }
                 }
             } catch (err) {
                 showAlert('Failed loading AI settings', true);
@@ -494,7 +516,7 @@
         document.getElementById('ai-settings-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const key = document.getElementById('openrouter-api-key').value.trim();
-            const model = document.getElementById('default-model').value;
+            const model = document.getElementById('default-model').value.trim();
 
             try {
                 const res = await fetchWithAuth('/api/v1/admin/settings', {
@@ -503,7 +525,7 @@
                     body: JSON.stringify({ openrouter_api_key: key, default_model: model })
                 });
                 if (res.ok) {
-                    showAlert('AI settings saved successfully');
+                    showAlert('AI settings saved successfully with model: ' + model);
                 } else {
                     showAlert('Failed to save settings', true);
                 }
@@ -514,20 +536,21 @@
 
         async function testApiKey() {
             const key = document.getElementById('openrouter-api-key').value.trim();
+            const model = document.getElementById('default-model').value.trim();
             if (!key) {
                 showAlert('Please enter an OpenRouter API key first', true);
                 return;
             }
-            showAlert('Testing OpenRouter connection...');
+            showAlert('Testing OpenRouter connection with model ' + (model || 'openrouter/free') + '...');
             try {
                 const res = await fetchWithAuth('/api/v1/admin/test-ai-key', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ key })
+                    body: JSON.stringify({ key, model })
                 });
                 const data = await res.json();
                 if (data.success) {
-                    showAlert('OpenRouter Connection Successful!');
+                    showAlert(data.message || 'OpenRouter Connection Successful!');
                 } else {
                     showAlert('OpenRouter Test Failed: ' + data.error, true);
                 }

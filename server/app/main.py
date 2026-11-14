@@ -48,8 +48,9 @@ async def lifespan(app: FastAPI):
             db.commit()
             print(">>> Bootstrapped default admin user: 'admin' / 'nexusadmin123'")
             
-        # Ensure default model setting exists
-        if not get_setting(db, "default_model"):
+        # Ensure default model setting exists and update legacy model
+        current_model = get_setting(db, "default_model")
+        if not current_model or current_model == "deepseek/deepseek-r1":
             set_setting(db, "default_model", DEFAULT_OPENROUTER_MODEL)
     finally:
         db.close()
@@ -127,6 +128,7 @@ class SettingsUpdate(BaseModel):
 
 class KeyTestRequest(BaseModel):
     key: str
+    model: Optional[str] = None
 
 class VoiceCommandRequest(BaseModel):
     transcript: str
@@ -297,7 +299,7 @@ async def test_key(
     req: KeyTestRequest,
     admin: User = Depends(get_current_admin_user)
 ):
-    res = await test_openrouter_key(req.key)
+    res = await test_openrouter_key(req.key, req.model)
     return res
 
 # ----------------- SCHEDULE APIS (FOR USER & MOBILE APP) -----------------
