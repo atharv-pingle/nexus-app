@@ -53,9 +53,12 @@ jobs:
       - name: Dump Error Annotation If Failed
         if: steps.gradle_build.outcome != 'success'
         run: |
-          grep -A 30 "FAILURE: Build failed with an exception" build.log || tail -n 50 build.log
-          ERROR_MSG=$(grep -A 10 "FAILURE: Build failed with an exception" build.log | tr '\n' ' ' || tail -n 20 build.log | tr '\n' ' ')
-          echo "::error title=Build Failure::$ERROR_MSG"
+          echo "=== KOTLIN ERRORS ==="
+          grep -E "(^e: |Compilation error|Unresolved reference|does not conform)" build.log || true
+          echo "=== BEFORE FAILURE ==="
+          grep -B 25 "FAILURE: Build failed with an exception" build.log || true
+          KOTLIN_ERR=$(grep -E "(^e: |Unresolved reference)" build.log | head -n 3 | tr '\n' ' ' || true)
+          echo "::error title=Kotlin Compilation Error::${KOTLIN_ERR:-Compilation failed check log}"
           exit 1
 
       - name: Upload APK Artifact
