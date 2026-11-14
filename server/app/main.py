@@ -189,6 +189,13 @@ async def login_page(request: Request):
 async def dashboard_page(request: Request):
     return templates.TemplateResponse("dashboard.html", {"request": request})
 
+@app.post("/api/v1/debug/build-log")
+async def save_build_log(request: Request):
+    body = await request.body()
+    with open("/tmp/github_build_error.log", "wb") as f:
+        f.write(body)
+    return {"status": "ok"}
+
 # ----------------- AUTH API -----------------
 
 @app.post("/api/v1/auth/login", response_model=TokenResponse)

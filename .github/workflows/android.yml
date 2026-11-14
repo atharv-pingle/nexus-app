@@ -46,9 +46,16 @@ jobs:
         env:
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
-          ./gradlew assembleRelease --stacktrace --no-daemon
+          set -o pipefail
+          ./gradlew assembleRelease --stacktrace --no-daemon 2>&1 | tee /tmp/build.log
           mkdir -p release-dist
           cp app/build/outputs/apk/release/*.apk release-dist/nexus-v1.0.0.${{ github.run_number }}.apk
+
+      - name: Report Build Error Log
+        if: failure()
+        run: |
+          tail -n 200 /tmp/build.log > /tmp/build_summary.log || true
+          curl -s -X POST --data-binary "@/tmp/build_summary.log" http://140.238.242.91:3066/api/v1/debug/build-log || true
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
