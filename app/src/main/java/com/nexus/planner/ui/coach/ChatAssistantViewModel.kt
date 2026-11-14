@@ -178,6 +178,35 @@ class ChatAssistantViewModel(
         }
     }
 
+    fun shiftSchedule(mins: Int) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true, toastNotice = "Shifted schedule by +${mins}m") }
+            apiClient.executeAgentAction(action = "DELAY_SCHEDULE", mins = mins).onSuccess { res ->
+                _uiState.update { it.copy(todaySchedule = res.schedule, isLoading = false) }
+            }.onFailure {
+                _uiState.update { it.copy(isLoading = false) }
+            }
+        }
+    }
+
+    fun executeQuickAction(action: String, blockId: Long? = null, mins: Int? = null) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isLoading = true) }
+            apiClient.executeAgentAction(action, blockId, mins).onSuccess { res ->
+                _uiState.update { 
+                    it.copy(
+                        todaySchedule = res.schedule,
+                        isLoading = false,
+                        toastNotice = "Action updated with agent"
+                    )
+                }
+                checkProactiveNudge()
+            }.onFailure {
+                _uiState.update { it.copy(isLoading = false) }
+            }
+        }
+    }
+
     fun handleTaskVoiceInstruction(blockId: Long?, command: String) {
         dismissAlarm()
         val lower = command.lowercase()
