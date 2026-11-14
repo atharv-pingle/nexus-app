@@ -46,15 +46,13 @@ jobs:
         env:
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
-          ./gradlew assembleRelease assembleDebug --stacktrace
+          ./gradlew assembleDebug --stacktrace --info
 
-      - name: Upload APK Artifacts
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: nexus-app-v1.0.0.${{ github.run_number }}-apk
-          path: |
-            app/build/outputs/apk/release/*.apk
-            app/build/outputs/apk/debug/*.apk
+          name: nexus-app-v1.0.0.${{ github.run_number }}
+          path: app/build/outputs/apk/debug/*.apk
           retention-days: 30
 
       - name: Create GitHub Release
@@ -68,7 +66,7 @@ jobs:
             
             - **Build Version:** `1.0.0.${{ github.run_number }}` (VersionCode: `${{ github.run_number }}`)
             - **Commit SHA:** `${{ github.sha }}`
-            - **Device Compatibility:** Seamless in-place updates for Nothing OS / Android 14+ (Signed with consistent V1-V4 keys).
+            - **Device Compatibility:** Seamless in-place updates for Nothing Phone / Android 14+ (Signed with consistent V1-V3 keys).
             
             #### 📦 Included Features:
             - **Daily Orbit**: Dynamic Ultradian 75m/90m schedule with Parkinson rebalancing.
@@ -77,10 +75,9 @@ jobs:
             - **Nightly Architect**: OpenRouter-driven next-day generation & habit telemetry.
             - **Anti-Slop UI**: High-contrast minimal typography.
             
-            #### 📲 Installation:
-            Download and install the APK below directly on your phone. Future updates will replace and upgrade smoothly.
+            #### 📲 Installation on Nothing Phone:
+            Download and install the APK below directly. Future updates will replace and upgrade smoothly with zero parse or signature errors!
           files: |
-            app/build/outputs/apk/release/*.apk
             app/build/outputs/apk/debug/*.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -56,13 +56,12 @@ android {
                 enableV1Signing = true
                 enableV2Signing = true
                 enableV3Signing = true
-                enableV4Signing = true
             }
         }
     }
 
     buildTypes {
-        release {
+        getByName("release") {
             isMinifyEnabled = false
             signingConfig = signingConfigs.getByName("releaseKey")
             proguardFiles(
@@ -70,7 +69,7 @@ android {
                 "proguard-rules.pro"
             )
         }
-        debug {
+        getByName("debug") {
             // Sign debug with same key to guarantee seamless in-place updates on Nothing Phone
             signingConfig = signingConfigs.getByName("releaseKey")
         }
