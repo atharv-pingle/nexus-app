@@ -46,13 +46,15 @@ jobs:
         env:
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
-          ./gradlew assembleDebug --stacktrace --no-daemon
+          ./gradlew assembleRelease --stacktrace --no-daemon
+          mkdir -p release-dist
+          cp app/build/outputs/apk/release/*.apk release-dist/nexus-v1.0.0.${{ github.run_number }}.apk
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: nexus-app-v1.0.0.${{ github.run_number }}
-          path: app/build/outputs/apk/debug/*.apk
+          name: nexus-v1.0.0.${{ github.run_number }}
+          path: release-dist/nexus-v1.0.0.${{ github.run_number }}.apk
           retention-days: 30
 
       - name: Create GitHub Release
@@ -66,18 +68,18 @@ jobs:
             
             - **Build Version:** `1.0.0.${{ github.run_number }}` (VersionCode: `${{ github.run_number }}`)
             - **Commit SHA:** `${{ github.sha }}`
-            - **Device Compatibility:** Seamless in-place updates for Nothing Phone / Android 14+ (Signed with consistent V1-V3 keys).
+            - **Device Compatibility:** Seamless in-place updates for Nothing Phone (3a) / Android 14+ (Signed with persistent V1-V3 release keystore).
             
             #### 📦 Included Features:
             - **Daily Orbit**: Dynamic Ultradian 75m/90m schedule with Parkinson rebalancing.
             - **Transition Interceptor**: 15:30 work-to-life 20m power nap / NSDR timer.
             - **Voice-First Interaction**: Hands-free agent mode via bottom center mic.
             - **Nightly Architect**: OpenRouter-driven next-day generation & habit telemetry.
-            - **Anti-Slop UI**: High-contrast minimal typography.
+            - **Anti-Slop UI**: High-contrast minimal typography (`miqdadbadjuber/anti-slop` aesthetic).
             
-            #### 📲 Installation on Nothing Phone:
-            Download and install the APK below directly. Future updates will replace and upgrade smoothly with zero parse or signature errors!
+            #### 📲 Installation on Nothing Phone (3a):
+            Download and install `nexus-v1.0.0.${{ github.run_number }}.apk` below. Every new release replaces the existing installation seamlessly as an in-place update without any parse or signature errors.
           files: |
-            app/build/outputs/apk/debug/*.apk
+            release-dist/nexus-v1.0.0.${{ github.run_number }}.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
