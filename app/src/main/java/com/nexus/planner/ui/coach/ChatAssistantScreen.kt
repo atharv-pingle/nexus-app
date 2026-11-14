@@ -12,8 +12,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -97,12 +95,19 @@ fun ChatAssistantScreen(
                         )
                     }
 
-                    IconButton(onClick = { viewModel.loadData() }) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh",
-                            tint = Zinc400,
-                            modifier = Modifier.size(18.dp)
+                    Surface(
+                        color = Zinc900,
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, Zinc800),
+                        modifier = Modifier.clickable { viewModel.loadData() }
+                    ) {
+                        Text(
+                            text = "SYNC",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Zinc400,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
                 }
@@ -226,11 +231,11 @@ fun ChatAssistantScreen(
                                 },
                             contentAlignment = Alignment.Center
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Send,
-                                contentDescription = "Send",
-                                tint = Color.White,
-                                modifier = Modifier.size(16.dp)
+                            Text(
+                                text = "↑",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
                             )
                         }
                     }

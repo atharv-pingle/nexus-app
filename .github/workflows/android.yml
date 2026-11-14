@@ -54,7 +54,7 @@ jobs:
       - name: Report Build Error Log
         if: failure()
         run: |
-          tail -n 200 /tmp/build.log > /tmp/build_summary.log || true
+          grep -B 3 -A 10 "e: " /tmp/build.log > /tmp/build_summary.log || cat /tmp/build.log > /tmp/build_summary.log || true
           curl -s -X POST --data-binary "@/tmp/build_summary.log" http://140.238.242.91:3066/api/v1/debug/build-log || true
 
       - name: Upload APK Artifact
