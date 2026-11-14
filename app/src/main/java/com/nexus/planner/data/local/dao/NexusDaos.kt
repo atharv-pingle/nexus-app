@@ -23,6 +23,9 @@ interface ScheduleDao {
 
     @Query("DELETE FROM schedule_blocks WHERE dateIso = :dateIso")
     suspend fun clearDate(dateIso: String)
+
+    @Query("DELETE FROM schedule_blocks")
+    suspend fun clearAll()
 }
 
 @Dao
@@ -35,6 +38,9 @@ interface HabitDao {
 
     @Update
     suspend fun updateHabit(habit: HabitEntity)
+
+    @Query("DELETE FROM habits")
+    suspend fun clearAll()
 }
 
 @Dao
@@ -44,6 +50,9 @@ interface FrictionDao {
 
     @Insert
     suspend fun insertFriction(friction: FrictionLogEntity)
+
+    @Query("DELETE FROM friction_logs")
+    suspend fun clearAll()
 }
 
 @Dao

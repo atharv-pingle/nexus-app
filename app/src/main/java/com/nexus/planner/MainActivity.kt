@@ -30,6 +30,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.nexus.planner.ui.architect.ArchitectScreen
 import com.nexus.planner.ui.architect.ArchitectViewModel
+import com.nexus.planner.ui.auth.LoginScreen
 import com.nexus.planner.ui.coach.CoachScreen
 import com.nexus.planner.ui.coach.CoachViewModel
 import com.nexus.planner.ui.components.VoiceModalSheet
@@ -40,6 +41,7 @@ import com.nexus.planner.ui.theme.*
 import com.nexus.planner.ui.timeline.TimelineScreen
 import com.nexus.planner.ui.timeline.TimelineViewModel
 import kotlinx.coroutines.launch
+import java.time.LocalDate
 
 class MainActivity : ComponentActivity() {
 
@@ -58,6 +60,13 @@ class MainActivity : ComponentActivity() {
         val repository = app.repository
         val voiceManager = app.voiceManager
 
+        // Sync with server if already logged in
+        if (app.authManager.hasValidToken()) {
+            lifecycleScope.launch {
+                repository.syncWithServer(LocalDate.now().toString())
+            }
+        }
+
         val timelineViewModel = TimelineViewModel(repository)
         val architectViewModel = ArchitectViewModel(repository)
         val coachViewModel = CoachViewModel(repository)
@@ -65,62 +74,111 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             NexusTheme {
-                val navController = rememberNavController()
-                val navBackStackEntry by navController.currentBackStackEntryAsState()
-                val currentRoute = navBackStackEntry?.destination?.route ?: Screen.Timeline.route
-                var showVoiceSheet by remember { mutableStateOf(false) }
+                val isLoggedIn by app.authManager.isLoggedIn.collectAsState()
 
-                Scaffold(
-                    bottomBar = {
-                        NexusBottomBar(
-                            currentRoute = currentRoute,
-                            onNavigate = { route ->
-                                navController.navigate(route) {
-                                    popUpTo(Screen.Timeline.route) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
+                if (!isLoggedIn) {
+                    LoginScreen(
+                        authManager = app.authManager,
+                        apiClient = app.apiClient,
+                        onLoginSuccess = {
+                            lifecycleScope.launch {
+                                repository.syncWithServer(LocalDate.now().toString())
+                            }
+                        }
+                    )
+                } else {
+                    val navController = rememberNavController()
+                    val navBackStackEntry by navController.currentBackStackEntryAsState()
+                    val currentRoute = navBackStackEntry?.destination?.route ?: Screen.Timeline.route
+                    var showVoiceSheet by remember { mutableStateOf(false) }
+
+                    Scaffold(
+                        topBar = {
+                            Surface(
+                                modifier = Modifier.fillMaxWidth().height(42.dp),
+                                color = Black,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Zinc900)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "NEXUS // " + app.authManager.getUsername().uppercase(),
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Zinc400
+                                    )
+                                    Text(
+                                        text = "SIGN OUT",
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 10.sp,
+                                        color = Zinc500,
+                                        modifier = Modifier
+                                            .clickable {
+                                                lifecycleScope.launch {
+                                                    repository.clearLocalData()
+                                                    app.authManager.clearSession()
+                                                }
+                                            }
+                                            .padding(4.dp)
+                                    )
                                 }
-                            },
-                            onMicClick = { showVoiceSheet = true }
-                        )
-                    },
-                    containerColor = Black
-                ) { innerPadding ->
-                    NavHost(
-                        navController = navController,
-                        startDestination = Screen.Timeline.route,
-                        modifier = Modifier.padding(innerPadding)
-                    ) {
-                        composable(Screen.Timeline.route) {
-                            TimelineScreen(viewModel = timelineViewModel)
+                            }
+                        },
+                        bottomBar = {
+                            NexusBottomBar(
+                                currentRoute = currentRoute,
+                                onNavigate = { route ->
+                                    navController.navigate(route) {
+                                        popUpTo(Screen.Timeline.route) { saveState = true }
+                                        launchSingleTop = true
+                                        restoreState = true
+                                    }
+                                },
+                                onMicClick = { showVoiceSheet = true }
+                            )
+                        },
+                        containerColor = Black
+                    ) { innerPadding ->
+                        NavHost(
+                            navController = navController,
+                            startDestination = Screen.Timeline.route,
+                            modifier = Modifier.padding(innerPadding)
+                        ) {
+                            composable(Screen.Timeline.route) {
+                                TimelineScreen(viewModel = timelineViewModel)
+                            }
+                            composable(Screen.Architect.route) {
+                                ArchitectScreen(viewModel = architectViewModel)
+                            }
+                            composable(Screen.Coach.route) {
+                                CoachScreen(viewModel = coachViewModel)
+                            }
+                            composable(Screen.Stats.route) {
+                                StatsScreen(viewModel = statsViewModel)
+                            }
                         }
-                        composable(Screen.Architect.route) {
-                            ArchitectScreen(viewModel = architectViewModel)
-                        }
-                        composable(Screen.Coach.route) {
-                            CoachScreen(viewModel = coachViewModel)
-                        }
-                        composable(Screen.Stats.route) {
-                            StatsScreen(viewModel = statsViewModel)
-                        }
-                    }
 
-                    if (showVoiceSheet) {
-                        VoiceModalSheet(
-                            voiceManager = voiceManager,
-                            onIntentConfirmed = { speechText ->
-                                showVoiceSheet = false
-                                lifecycleScope.launch {
-                                    val result = repository.processVoiceIntent(speechText)
-                                    result.onSuccess { intent ->
-                                        if (intent.spokenConfirmation.isNotBlank()) {
-                                            voiceManager.speak(intent.spokenConfirmation)
+                        if (showVoiceSheet) {
+                            VoiceModalSheet(
+                                voiceManager = voiceManager,
+                                onIntentConfirmed = { speechText ->
+                                    showVoiceSheet = false
+                                    lifecycleScope.launch {
+                                        val result = repository.processVoiceIntent(speechText)
+                                        result.onSuccess { intent ->
+                                            if (intent.spokenConfirmation.isNotBlank()) {
+                                                voiceManager.speak(intent.spokenConfirmation)
+                                            }
                                         }
                                     }
-                                }
-                            },
-                            onDismiss = { showVoiceSheet = false }
-                        )
+                                },
+                                onDismiss = { showVoiceSheet = false }
+                            )
+                        }
                     }
                 }
             }

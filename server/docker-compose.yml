@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  nexus-server:
+    build: .
+    container_name: nexus-server
+    restart: unless-stopped
+    ports:
+      - "3066:3066"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - PORT=3066
+      - DATABASE_URL=sqlite:////app/data/nexus.db
+      - JWT_SECRET=nexus-super-secret-key-change-in-production-2026

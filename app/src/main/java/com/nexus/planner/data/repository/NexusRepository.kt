@@ -5,6 +5,8 @@ import com.nexus.planner.data.local.entity.FrictionLogEntity
 import com.nexus.planner.data.local.entity.HabitEntity
 import com.nexus.planner.data.local.entity.ScheduleBlockEntity
 import com.nexus.planner.data.local.entity.UserCognitiveProfileEntity
+import com.nexus.planner.data.remote.AuthManager
+import com.nexus.planner.data.remote.NexusApiClient
 import com.nexus.planner.data.remote.OpenRouterClient
 import com.nexus.planner.data.remote.VoiceIntentPayload
 import kotlinx.coroutines.flow.Flow
@@ -15,7 +17,9 @@ import java.time.format.DateTimeFormatter
 
 class NexusRepository(
     private val database: NexusDatabase,
-    val openRouterClient: OpenRouterClient
+    val openRouterClient: OpenRouterClient,
+    val apiClient: NexusApiClient? = null,
+    val authManager: AuthManager? = null
 ) {
     private val scheduleDao = database.scheduleDao()
     private val habitDao = database.habitDao()
@@ -23,6 +27,54 @@ class NexusRepository(
     private val userProfileDao = database.userProfileDao()
 
     val timeFormatter: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+
+    suspend fun syncWithServer(dateIso: String) {
+        if (authManager?.hasValidToken() != true || apiClient == null) return
+        apiClient.fetchTodaySchedule().onSuccess { serverBlocks ->
+            if (serverBlocks.isNotEmpty()) {
+                val entities = serverBlocks.mapIndexed { idx, b ->
+                    ScheduleBlockEntity(
+                        id = b.id ?: 0L,
+                        dateIso = b.scheduled_date ?: dateIso,
+                        startTime = b.start_time,
+                        endTime = b.end_time,
+                        title = b.title,
+                        description = "",
+                        category = b.block_type,
+                        durationMinutes = b.duration_minutes,
+                        status = b.status,
+                        delayCount = b.delay_count,
+                        microAction = "",
+                        sortOrder = idx
+                    )
+                }
+                scheduleDao.clearDate(dateIso)
+                scheduleDao.insertBlocks(entities)
+            }
+        }
+        apiClient.fetchHabits().onSuccess { habits ->
+            if (habits.isNotEmpty()) {
+                habits.forEach { h ->
+                    val entity = HabitEntity(
+                        id = h.id ?: 0L,
+                        name = h.title,
+                        category = h.category,
+                        targetDays = h.target_days,
+                        currentDayIndex = h.current_day,
+                        totalCompletions = h.streak,
+                        automaticityScore = (h.streak.toFloat() / h.target_days.toFloat()).coerceIn(0f, 1f)
+                    )
+                    habitDao.insertHabit(entity)
+                }
+            }
+        }
+    }
+
+    suspend fun clearLocalData() {
+        scheduleDao.clearAll()
+        habitDao.clearAll()
+        frictionDao.clearAll()
+    }
 
     fun getTodaySchedule(dateIso: String): Flow<List<ScheduleBlockEntity>> {
         return scheduleDao.getScheduleForDate(dateIso)
