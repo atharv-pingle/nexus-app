@@ -43,23 +43,10 @@ jobs:
         run: chmod +x gradlew
 
       - name: Build Signed APK with Dynamic Versioning
-        id: gradle_build
-        continue-on-error: true
         env:
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
-          ./gradlew assembleDebug --stacktrace > build.log 2>&1
-
-      - name: Dump Error Annotation If Failed
-        if: steps.gradle_build.outcome != 'success'
-        run: |
-          echo "=== KOTLIN ERRORS ==="
-          grep -E "(^e: |Compilation error|Unresolved reference|does not conform)" build.log || true
-          echo "=== BEFORE FAILURE ==="
-          grep -B 25 "FAILURE: Build failed with an exception" build.log || true
-          KOTLIN_ERR=$(grep -E "(^e: |Unresolved reference)" build.log | head -n 3 | tr '\n' ' ' || true)
-          echo "::error title=Kotlin Compilation Error::${KOTLIN_ERR:-Compilation failed check log}"
-          exit 1
+          ./gradlew assembleDebug --stacktrace --no-daemon
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
