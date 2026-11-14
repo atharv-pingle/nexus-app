@@ -1,0 +1,81 @@
+name: Nexus Android CI/CD
+
+on:
+  push:
+    branches: [ "main", "master" ]
+    tags: [ "v*" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build & Package Nexus APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Cache Gradle Packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Make Gradle Wrapper Executable
+        run: chmod +x gradlew || true
+
+      - name: Build Debug APK with Dynamic Versioning
+        env:
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          ./gradlew assembleDebug --stacktrace
+
+      - name: Upload Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus-app-v${{ github.run_number }}-debug
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 30
+
+      - name: Generate Release Notes & Create Release
+        if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: "Nexus v1.0.${{ github.run_number }}"
+          body: |
+            ### 🚀 Nexus Agentic Day Planner v1.0.${{ github.run_number }}
+            
+            - **Build Number:** ${{ github.run_number }}
+            - **Commit:** ${{ github.sha }}
+            - **Features Included:**
+              - Dynamic Ultradian Day Scheduler
+              - 3:30 PM Work-Life Reset Interceptor (20m Power Nap / NSDR)
+              - Voice-First Interaction via OpenRouter Agent Engine
+              - 66-Day Habit & Friction Analytics
+              - Anti-Slop High-Contrast UI
+          files: |
+            app/build/outputs/apk/debug/*.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
