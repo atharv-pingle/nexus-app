@@ -6,7 +6,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, Form, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import engine, Base, get_db
@@ -74,7 +74,7 @@ templates = Jinja2Templates(directory=templates_dir)
 
 class UserCreate(BaseModel):
     username: str
-    email: EmailStr
+    email: str
     password: str
     role: str = "user"
 
