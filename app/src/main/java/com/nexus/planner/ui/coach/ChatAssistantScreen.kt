@@ -1,8 +1,5 @@
 package com.nexus.planner.ui.coach
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -32,7 +29,6 @@ import com.nexus.planner.data.remote.ServerChatMessageDto
 import com.nexus.planner.data.remote.ServerScheduleBlockDto
 import com.nexus.planner.ui.theme.*
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import org.json.JSONArray
 
 @Composable
@@ -44,7 +40,6 @@ fun ChatAssistantScreen(
     val state by viewModel.uiState.collectAsState()
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
-    val coroutineScope = rememberCoroutineScope()
 
     // Auto-scroll when new messages arrive
     LaunchedEffect(state.messages.size) {
@@ -72,7 +67,7 @@ fun ChatAssistantScreen(
             Surface(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(52.dp),
+                    .height(48.dp),
                 color = Black,
                 border = BorderStroke(1.dp, Zinc900)
             ) {
@@ -97,7 +92,7 @@ fun ChatAssistantScreen(
                             text = "NEXUS // LIVE ASSISTANT",
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
+                            fontSize = 12.sp,
                             color = Color.White
                         )
                     }
@@ -141,7 +136,7 @@ fun ChatAssistantScreen(
                     }
                 }
 
-                // Render First Agent Message + Embedded Daily Task List
+                // Render Messages
                 items(state.messages) { msg ->
                     if (msg.sender == "user") {
                         UserMessageBubble(msg.content)
@@ -156,7 +151,7 @@ fun ChatAssistantScreen(
                     }
                 }
 
-                // Embedded Task List Section (Pinned under initial context)
+                // Embedded Task List Section (Continuous Schedule until Sleep)
                 if (state.schedule.isNotEmpty()) {
                     item {
                         TaskListSection(
@@ -181,40 +176,21 @@ fun ChatAssistantScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // Pill text field
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(44.dp)
-                            .clip(RoundedCornerShape(22.dp))
-                            .background(Zinc900)
-                            .border(1.dp, Zinc800, RoundedCornerShape(22.dp))
-                            .padding(horizontal = 16.dp),
-                        contentAlignment = Alignment.CenterStart
-                    ) {
-                        TextField(
-                            value = inputText,
-                            onValueChange = { inputText = it },
-                            placeholder = {
-                                Text(
-                                    "Message Nexus...",
-                                    fontSize = 13.sp,
-                                    color = Zinc500
-                                )
-                            },
-                            colors = TextFieldDefaults.colors(
-                                focusedContainerColor = Color.Transparent,
-                                unfocusedContainerColor = Color.Transparent,
-                                disabledContainerColor = Color.Transparent,
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent,
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White
-                            ),
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
+                    OutlinedTextField(
+                        value = inputText,
+                        onValueChange = { inputText = it },
+                        placeholder = { Text("Message Nexus...", fontSize = 12.sp, color = Zinc500) },
+                        modifier = Modifier.weight(1f),
+                        textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Zinc600,
+                            unfocusedBorderColor = Zinc800,
+                            focusedContainerColor = Zinc950,
+                            unfocusedContainerColor = Zinc950
+                        ),
+                        shape = RoundedCornerShape(20.dp),
+                        singleLine = true
+                    )
 
                     // Circular White Mic Button (ChatGPT Style)
                     Box(
@@ -240,7 +216,7 @@ fun ChatAssistantScreen(
                     if (inputText.isNotBlank()) {
                         Box(
                             modifier = Modifier
-                                .size(36.dp)
+                                .size(40.dp)
                                 .clip(CircleShape)
                                 .background(Zinc800)
                                 .clickable {
@@ -404,8 +380,13 @@ fun TaskListSection(
                 }
             }
 
-            // Quick Delay Controls
-            Divider(color = Zinc900, thickness = 1.dp)
+            // Safe Divider
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(1.dp)
+                    .background(Zinc900)
+            )
 
             Row(
                 modifier = Modifier.fillMaxWidth(),

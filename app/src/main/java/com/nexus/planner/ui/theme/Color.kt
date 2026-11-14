@@ -22,6 +22,7 @@ val SurfaceDark = Zinc950
 
 // Functional Semantic Accents (Sparingly Used)
 val EmeraldAccent = Color(0xFF10B981)
+val Emerald400 = Color(0xFF34D399)
 val AmberAccent = Color(0xFFF59E0B)
 val RedAccent = Color(0xFFEF4444)
 val BlueAccent = Color(0xFF3B82F6)
