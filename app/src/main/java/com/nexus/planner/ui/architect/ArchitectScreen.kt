@@ -53,7 +53,7 @@ fun ArchitectScreen(
                     style = MaterialTheme.typography.headlineMedium
                 )
             }
-            Divider(color = Zinc900, thickness = 1.dp, modifier = Modifier.padding(top = 8.dp))
+            Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Zinc900), contentAlignment = androidx.compose.ui.Alignment.Center) { Spacer(Modifier.height(1.dp)) }
         }
 
         // Section: Energy Level

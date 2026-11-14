@@ -1,5 +1,6 @@
 package com.nexus.planner.ui.timeline
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -73,7 +74,7 @@ fun TimelineScreen(
                         color = EmeraldAccent
                     )
                 }
-                Divider(color = Zinc900, thickness = 1.dp)
+                Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(Zinc900))
             }
 
             // Active Focus Block
@@ -227,7 +228,7 @@ fun ActiveBlockCard(
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(6.dp),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Zinc300),
-                    border = ButtonDefaults.outlinedButtonBorder.copy(brush = androidx.compose.ui.graphics.SolidColor(Zinc800))
+                    border = BorderStroke(1.dp, Zinc800)
                 ) {
                     Text("+15m", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
                 }
@@ -236,7 +237,7 @@ fun ActiveBlockCard(
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(6.dp),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Zinc300),
-                    border = ButtonDefaults.outlinedButtonBorder.copy(brush = androidx.compose.ui.graphics.SolidColor(Zinc800))
+                    border = BorderStroke(1.dp, Zinc800)
                 ) {
                     Text("+30m", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
                 }
@@ -245,7 +246,7 @@ fun ActiveBlockCard(
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(6.dp),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = Zinc400),
-                    border = ButtonDefaults.outlinedButtonBorder.copy(brush = androidx.compose.ui.graphics.SolidColor(Zinc800))
+                    border = BorderStroke(1.dp, Zinc800)
                 ) {
                     Text("Skip", fontFamily = FontFamily.Monospace, fontSize = 12.sp)
                 }
@@ -281,7 +282,7 @@ fun TransitionInterceptorCard(onStartNap: () -> Unit) {
                 onClick = onStartNap,
                 shape = RoundedCornerShape(6.dp),
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = AmberAccent),
-                border = ButtonDefaults.outlinedButtonBorder.copy(brush = androidx.compose.ui.graphics.SolidColor(AmberAccent.copy(alpha = 0.4f)))
+                border = BorderStroke(1.dp, AmberAccent.copy(alpha = 0.4f))
             ) {
                 Text("Start 20m", fontFamily = FontFamily.Monospace, fontSize = 11.sp)
             }
