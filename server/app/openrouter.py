@@ -42,8 +42,11 @@ async def test_openrouter_key(api_key: str, model: Optional[str] = None) -> Dict
             resp = await client.post(OPENROUTER_URL, headers=headers, json=payload)
             if resp.status_code == 200:
                 data = resp.json()
-                reply = data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-                return {"success": True, "message": f"OpenRouter Key is valid! Model '{target_model}' responded: '{reply or 'OK'}'"}
+                choice = (data.get("choices") or [{}])[0]
+                message = choice.get("message") or {}
+                content = message.get("content") or message.get("reasoning") or "OK"
+                reply = str(content).strip()
+                return {"success": True, "message": f"OpenRouter Key is valid! Model '{target_model}' responded: '{reply}'"}
             else:
                 return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
     except Exception as e:
@@ -90,7 +93,9 @@ async def execute_chat(
                 return {"success": False, "error": f"OpenRouter Error {resp.status_code}: {resp.text}"}
             
             data = resp.json()
-            content = data["choices"][0]["message"]["content"]
+            choice = (data.get("choices") or [{}])[0]
+            message = choice.get("message") or {}
+            content = message.get("content") or message.get("reasoning") or ""
             return {"success": True, "content": content}
     except Exception as e:
         return {"success": False, "error": str(e)}
