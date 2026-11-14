@@ -46,7 +46,7 @@ jobs:
         env:
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
         run: |
-          ./gradlew assembleDebug --stacktrace > build.log 2>&1 || (tail -n 120 build.log && exit 1)
+          ./gradlew assembleDebug --stacktrace --no-daemon
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4

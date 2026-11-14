@@ -90,12 +90,19 @@ fun HabitAutomaticityCard(habit: HabitEntity) {
                 Text("Day ${habit.currentDayIndex} / 66", fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = Zinc400)
             }
 
-            LinearProgressIndicator(
-                progress = habit.automaticityScore.coerceIn(0f, 1f),
-                modifier = Modifier.fillMaxWidth().height(4.dp),
-                color = White,
-                trackColor = Zinc900
-            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(4.dp)
+                    .background(Zinc900, RoundedCornerShape(2.dp))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(habit.automaticityScore.coerceIn(0.05f, 1f))
+                        .fillMaxHeight()
+                        .background(White, RoundedCornerShape(2.dp))
+                )
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),

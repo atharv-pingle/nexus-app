@@ -12,8 +12,8 @@ import kotlinx.coroutines.flow.stateIn
 class StatsViewModel(repository: NexusRepository) : ViewModel() {
 
     val habits: StateFlow<List<HabitEntity>> = repository.getAllHabits()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
 
     val frictions: StateFlow<List<FrictionLogEntity>> = repository.getAllFrictions()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
 }

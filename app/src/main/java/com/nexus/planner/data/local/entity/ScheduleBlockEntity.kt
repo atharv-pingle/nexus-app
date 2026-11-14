@@ -8,7 +8,7 @@ import kotlinx.serialization.Serializable
 @Entity(tableName = "schedule_blocks")
 data class ScheduleBlockEntity(
     @PrimaryKey(autoGenerate = true)
-    val id: Long = 0,
+    val id: Long = 0L,
     val dateIso: String,            // e.g. "2026-11-14"
     val startTime: String,          // e.g. "08:00"
     val endTime: String,            // e.g. "15:30"

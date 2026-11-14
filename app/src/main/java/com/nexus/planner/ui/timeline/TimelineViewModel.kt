@@ -16,7 +16,7 @@ class TimelineViewModel(private val repository: NexusRepository) : ViewModel() {
     private val todayIso = LocalDate.now().toString()
 
     val schedule: StateFlow<List<ScheduleBlockEntity>> = repository.getTodaySchedule(todayIso)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000L), emptyList())
 
     private val _statusMessage = MutableStateFlow<String?>(null)
     val statusMessage: StateFlow<String?> = _statusMessage

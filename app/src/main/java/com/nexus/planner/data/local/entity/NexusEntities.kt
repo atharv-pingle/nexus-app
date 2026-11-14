@@ -8,7 +8,7 @@ import kotlinx.serialization.Serializable
 @Entity(tableName = "habits")
 data class HabitEntity(
     @PrimaryKey(autoGenerate = true)
-    val id: Long = 0,
+    val id: Long = 0L,
     val name: String,               // e.g. "Side Project Deep Work"
     val category: String,           // PROJECT, FITNESS, SLEEP, MINDFULNESS
     val targetDays: Int = 66,       // Dr. Lally 66-day protocol
@@ -23,7 +23,7 @@ data class HabitEntity(
 @Entity(tableName = "friction_logs")
 data class FrictionLogEntity(
     @PrimaryKey(autoGenerate = true)
-    val id: Long = 0,
+    val id: Long = 0L,
     val dateIso: String,
     val tag: String,                // PHONE_SCROLLING, AFTERNOON_SLEEP, WORK_RUNOVER, VAGUE_TASK
     val contextNotes: String = "",
