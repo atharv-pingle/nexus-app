@@ -1,5 +1,7 @@
 package com.nexus.planner.ui.coach
 
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -18,6 +20,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -39,10 +42,11 @@ fun ChatAssistantScreen(
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
-    // Auto-scroll when new messages arrive
-    LaunchedEffect(state.messages.size) {
-        if (state.messages.isNotEmpty()) {
-            listState.animateScrollToItem(state.messages.size)
+    // Auto-scroll when new messages arrive or when agent is processing
+    LaunchedEffect(state.messages.size, state.isLoading) {
+        val count = state.messages.size + (if (state.isLoading) 1 else 0)
+        if (count > 0) {
+            listState.animateScrollToItem(count)
         }
     }
 
@@ -105,6 +109,13 @@ fun ChatAssistantScreen(
                                 }
                             }
                         )
+                    }
+                }
+
+                // In-line typing / processing indicator
+                if (state.isLoading) {
+                    item {
+                        AgentTypingBubble()
                     }
                 }
 
@@ -217,6 +228,43 @@ fun ChatAssistantScreen(
                             )
                         }
                     }
+                }
+            }
+        }
+
+        // Floating Agent Processing Pop-up Pill
+        AnimatedVisibility(
+            visible = state.isLoading,
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 74.dp)
+        ) {
+            Surface(
+                color = Color(0xFF18181B),
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, Emerald400.copy(alpha = 0.6f)),
+                shadowElevation = 8.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(text = "⚡", fontSize = 12.sp)
+                    Text(
+                        text = "Nexus is processing...",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = Emerald400
+                    )
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(12.dp),
+                        strokeWidth = 1.5.dp,
+                        color = Emerald400
+                    )
                 }
             }
         }
@@ -538,6 +586,150 @@ fun AgentMessageBubble(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun AgentTypingBubble() {
+    val infiniteTransition = rememberInfiniteTransition(label = "typing_dots")
+
+    val dot1Alpha by infiniteTransition.animateFloat(
+        initialValue = 0.25f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(500, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "dot1Alpha"
+    )
+    val dot2Alpha by infiniteTransition.animateFloat(
+        initialValue = 0.25f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(500, delayMillis = 160, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "dot2Alpha"
+    )
+    val dot3Alpha by infiniteTransition.animateFloat(
+        initialValue = 0.25f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(500, delayMillis = 320, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "dot3Alpha"
+    )
+
+    val dot1Scale by infiniteTransition.animateFloat(
+        initialValue = 0.65f,
+        targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "dot1Scale"
+    )
+    val dot2Scale by infiniteTransition.animateFloat(
+        initialValue = 0.65f,
+        targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(500, delayMillis = 160, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "dot2Scale"
+    )
+    val dot3Scale by infiniteTransition.animateFloat(
+        initialValue = 0.65f,
+        targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(500, delayMillis = 320, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "dot3Scale"
+    )
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Avatar
+        Box(
+            modifier = Modifier
+                .size(30.dp)
+                .clip(CircleShape)
+                .background(Emerald400),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "N",
+                fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+                color = Color.Black
+            )
+        }
+
+        Surface(
+            color = Zinc900,
+            shape = RoundedCornerShape(topStart = 4.dp, topEnd = 18.dp, bottomStart = 18.dp, bottomEnd = 18.dp),
+            border = BorderStroke(1.dp, Zinc800)
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .graphicsLayer {
+                                scaleX = dot1Scale
+                                scaleY = dot1Scale
+                                alpha = dot1Alpha
+                            }
+                            .clip(CircleShape)
+                            .background(Emerald400)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .graphicsLayer {
+                                scaleX = dot2Scale
+                                scaleY = dot2Scale
+                                alpha = dot2Alpha
+                            }
+                            .clip(CircleShape)
+                            .background(Emerald400)
+                    )
+                    Box(
+                        modifier = Modifier
+                            .size(7.dp)
+                            .graphicsLayer {
+                                scaleX = dot3Scale
+                                scaleY = dot3Scale
+                                alpha = dot3Alpha
+                            }
+                            .clip(CircleShape)
+                            .background(Emerald400)
+                    )
+                }
+
+                Text(
+                    text = "Nexus is thinking...",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    color = Zinc400
+                )
             }
         }
     }

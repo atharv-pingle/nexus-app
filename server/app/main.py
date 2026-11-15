@@ -34,7 +34,9 @@ from app.agent_service import (
     handle_agent_dialogue,
     shift_remaining_blocks,
     parse_time_to_minutes,
-    format_minutes_to_time
+    format_minutes_to_time,
+    run_auto_plan,
+    revert_auto_plan
 )
 
 @asynccontextmanager
@@ -367,8 +369,6 @@ async def get_tomorrow_schedule(
     db: Session = Depends(get_db)
 ):
     tomorrow_str = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
-    # Core brain: automatically rollover unfinished tasks from today
-    rollover_incomplete_tasks(db, current_user)
     blocks = ensure_full_day_schedule(db, current_user, target_date=tomorrow_str)
     return [
         ScheduleBlockSchema(
@@ -538,6 +538,22 @@ async def complete_block(
     block.status = "COMPLETED" if block.is_completed else "UPCOMING"
     db.commit()
     return {"status": "ok", "block_id": block_id, "is_completed": block.is_completed}
+
+@app.post("/api/v1/schedule/auto-plan")
+async def trigger_auto_plan(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    res = await run_auto_plan(db, current_user)
+    return res
+
+@app.post("/api/v1/schedule/auto-plan/revert")
+async def revert_auto_plan_endpoint(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    res = revert_auto_plan(db, current_user)
+    return res
 
 # ----------------- AGENT CHAT & PROACTIVE INTELLIGENCE -----------------
 

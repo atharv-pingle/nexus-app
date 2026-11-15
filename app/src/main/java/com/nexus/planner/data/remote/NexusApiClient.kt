@@ -393,4 +393,50 @@ class NexusApiClient(
             Result.failure(e)
         }
     }
+
+    suspend fun triggerAutoPlan(): Result<ServerAutoPlanResponseDto> = withContext(Dispatchers.IO) {
+        try {
+            val authToken = token() ?: return@withContext Result.failure(IllegalStateException("Not authenticated"))
+            val emptyBody = "".toRequestBody(jsonMediaType)
+            val request = Request.Builder()
+                .url("${baseUrl()}/api/v1/schedule/auto-plan")
+                .header("Authorization", "Bearer $authToken")
+                .post(emptyBody)
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: ""
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(IOException("HTTP ${response.code}: $bodyStr"))
+                }
+                val res = json.decodeFromString<ServerAutoPlanResponseDto>(bodyStr)
+                Result.success(res)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun revertAutoPlan(): Result<ServerAutoPlanResponseDto> = withContext(Dispatchers.IO) {
+        try {
+            val authToken = token() ?: return@withContext Result.failure(IllegalStateException("Not authenticated"))
+            val emptyBody = "".toRequestBody(jsonMediaType)
+            val request = Request.Builder()
+                .url("${baseUrl()}/api/v1/schedule/auto-plan/revert")
+                .header("Authorization", "Bearer $authToken")
+                .post(emptyBody)
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: ""
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(IOException("HTTP ${response.code}: $bodyStr"))
+                }
+                val res = json.decodeFromString<ServerAutoPlanResponseDto>(bodyStr)
+                Result.success(res)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }

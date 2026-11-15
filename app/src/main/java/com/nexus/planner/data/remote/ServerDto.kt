@@ -69,7 +69,16 @@ data class ServerChatResponseDto(
     val reply: String,
     val action_taken: String = "NONE",
     val show_schedule_widget: Boolean = false,
-    val schedule: List<ServerScheduleBlockDto> = emptyList()
+    val schedule: List<ServerScheduleBlockDto> = emptyList(),
+    val tomorrow_schedule: List<ServerScheduleBlockDto> = emptyList()
+)
+
+@Serializable
+data class ServerAutoPlanResponseDto(
+    val success: Boolean = true,
+    val summary: String? = null,
+    val today_schedule: List<ServerScheduleBlockDto> = emptyList(),
+    val tomorrow_schedule: List<ServerScheduleBlockDto> = emptyList()
 )
 
 @Serializable

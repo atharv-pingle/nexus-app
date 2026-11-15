@@ -3,7 +3,7 @@ import json
 import re
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
-from app.models import User, ScheduleBlock, ChatMessage, Habit
+from app.models import User, ScheduleBlock, ChatMessage, Habit, ServerSetting
 from app.openrouter import execute_chat
 
 DEFAULT_SCHEDULE_TEMPLATE = [
@@ -357,25 +357,111 @@ Respond strictly in JSON format:
 
     # ---------------- EXECUTE AGENT ACTIONS ----------------
     if action == "MOVE_TASK":
+        # Directional destination resolution
+        dest_to_tomorrow = bool(
+            re.search(r'\b(to|for|on|onto)\s+tomorrow\b', lower) or
+            (target_date == "tomorrow" and not re.search(r'\b(to|for|on|onto)\s+today\b', lower)) or
+            ("tomorrow" in lower and "today" not in lower)
+        )
+        dest_to_today = bool(
+            re.search(r'\b(to|for|on|onto)\s+today\b', lower) or
+            (target_date == "today" and not re.search(r'\b(to|for|on|onto)\s+tomorrow\b', lower)) or
+            ("today" in lower and "tomorrow" not in lower)
+        )
+
+        if dest_to_tomorrow:
+            dest_date = tomorrow_str
+            src_date = today_str
+        elif dest_to_today:
+            dest_date = today_str
+            src_date = tomorrow_str
+        else:
+            if target_date == "tomorrow":
+                dest_date = tomorrow_str
+                src_date = today_str
+            else:
+                dest_date = today_str
+                src_date = tomorrow_str
+
+        # Fallback task keywords if task_title was empty
+        if not task_title:
+            if "gym" in lower:
+                task_title = "Gym"
+            elif "workout" in lower:
+                task_title = "Workout"
+            elif "pushup" in lower:
+                task_title = "Pushup"
+
         block_to_move = None
         if target_id:
-            block_to_move = db.query(ScheduleBlock).filter(ScheduleBlock.id == target_id, ScheduleBlock.user_id == user.id).first()
+            block_to_move = db.query(ScheduleBlock).filter(
+                ScheduleBlock.id == target_id,
+                ScheduleBlock.user_id == user.id
+            ).first()
+
         if not block_to_move and task_title:
+            # 1. Look on source date first
             block_to_move = db.query(ScheduleBlock).filter(
                 ScheduleBlock.user_id == user.id,
+                ScheduleBlock.scheduled_date == src_date,
                 ScheduleBlock.title.ilike(f"%{task_title}%")
-            ).order_by(ScheduleBlock.id.desc()).first()
-            
+            ).order_by(ScheduleBlock.id.asc()).first()
+
+            # 2. If not found on src_date, look on any date
+            if not block_to_move:
+                block_to_move = db.query(ScheduleBlock).filter(
+                    ScheduleBlock.user_id == user.id,
+                    ScheduleBlock.title.ilike(f"%{task_title}%")
+                ).order_by(ScheduleBlock.id.desc()).first()
+
+        if not block_to_move:
+            # Look for any uncompleted non-sleep block on source date
+            block_to_move = db.query(ScheduleBlock).filter(
+                ScheduleBlock.user_id == user.id,
+                ScheduleBlock.scheduled_date == src_date,
+                ScheduleBlock.is_completed == False,
+                ScheduleBlock.block_type != "SLEEP"
+            ).order_by(ScheduleBlock.start_time.asc()).first()
+
         if block_to_move:
-            # If user said "move to today", target is today
-            dest_date = today_str if ("today" in lower or target_date == "today") else tomorrow_str
             block_to_move.scheduled_date = dest_date
+            block_to_move.status = "UPCOMING"
+            block_to_move.is_completed = False
+
+            # Extract start time if specified (e.g. "at 6 PM", "at 18:00")
+            time_match = re.search(r'at\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)', lower)
+            if time_match and not start_time:
+                time_str = time_match.group(1).lower().strip()
+                try:
+                    if "pm" in time_str:
+                        h = int(re.sub(r'[^\d]', '', time_str.split(':')[0]))
+                        if h < 12: h += 12
+                        start_time = f"{h:02d}:00"
+                    elif "am" in time_str:
+                        h = int(re.sub(r'[^\d]', '', time_str.split(':')[0]))
+                        start_time = f"{h:02d}:00"
+                    else:
+                        parts = time_str.split(':')
+                        start_time = f"{int(parts[0]):02d}:{int(parts[1]) if len(parts) > 1 else 0:02d}"
+                except Exception:
+                    pass
+
             if start_time:
                 start_m = parse_time_to_minutes(start_time)
                 block_to_move.start_time = start_time
                 block_to_move.end_time = format_minutes_to_time(start_m + block_to_move.duration_minutes)
+
+            # Clean up redundant duplicate uncompleted task on destination date
+            db.query(ScheduleBlock).filter(
+                ScheduleBlock.user_id == user.id,
+                ScheduleBlock.scheduled_date == dest_date,
+                ScheduleBlock.id != block_to_move.id,
+                ScheduleBlock.title.ilike(f"%{block_to_move.title}%"),
+                ScheduleBlock.is_completed == False
+            ).delete(synchronize_session=False)
+
             db.commit()
-            dest_label = "today" if dest_date == today_str else "tomorrow"
+            dest_label = "tomorrow" if dest_date == tomorrow_str else "today"
             reply_text = f"Done, Atharv! 🎯 Moved '{block_to_move.title}' to {dest_label} at {block_to_move.start_time}–{block_to_move.end_time}. Your schedule has been auto-rebalanced! ⚡"
         else:
             reply_text = f"I couldn't find a matching task to move. Check your tasks tab and let me know the title or time! 🎯"
@@ -384,10 +470,10 @@ Respond strictly in JSON format:
         if not start_time:
             first_upcoming = next((b for b in today_blocks if not b.is_completed and b.block_type != "SLEEP"), None)
             start_time = first_upcoming.start_time if first_upcoming else "10:00"
-            
+
         start_m = parse_time_to_minutes(start_time)
         end_time = format_minutes_to_time(start_m + duration_mins)
-        
+
         new_block = ScheduleBlock(
             user_id=user.id,
             title=task_title,
@@ -402,9 +488,39 @@ Respond strictly in JSON format:
         )
         db.add(new_block)
         db.commit()
-        
+
         day_label = "tomorrow" if is_for_tomorrow else "today"
         reply_text = f"Got it, Atharv! 🎯 Added '{task_title}' for {day_label} at {start_time}–{end_time}. Check your tasks tab to view it!"
+
+    elif (action == "CANCEL_TASK" or (("cancel" in lower or "delete" in lower or "remove" in lower) and ("session" in lower or "task" in lower or "gym" in lower))):
+        target_to_cancel = None
+        if target_id:
+            target_to_cancel = db.query(ScheduleBlock).filter(
+                ScheduleBlock.id == target_id,
+                ScheduleBlock.user_id == user.id
+            ).first()
+        if not target_to_cancel:
+            search_title = task_title or ("gym" if "gym" in lower else None)
+            if search_title:
+                target_to_cancel = db.query(ScheduleBlock).filter(
+                    ScheduleBlock.user_id == user.id,
+                    ScheduleBlock.scheduled_date == today_str,
+                    ScheduleBlock.title.ilike(f"%{search_title}%")
+                ).first()
+            if not target_to_cancel:
+                target_to_cancel = db.query(ScheduleBlock).filter(
+                    ScheduleBlock.user_id == user.id,
+                    ScheduleBlock.scheduled_date == today_str,
+                    ScheduleBlock.is_completed == False,
+                    ScheduleBlock.block_type != "SLEEP"
+                ).order_by(ScheduleBlock.start_time.asc()).first()
+        if target_to_cancel:
+            task_title_canceled = target_to_cancel.title
+            db.delete(target_to_cancel)
+            db.commit()
+            reply_text = f"Cancelled '{task_title_canceled}'. Your schedule is freed up for focused execution! 🎯"
+        else:
+            reply_text = "I couldn't find an active task to cancel today."
 
     elif action == "COMPLETE_TASK" and target_id:
         b = db.query(ScheduleBlock).filter(ScheduleBlock.id == target_id, ScheduleBlock.user_id == user.id).first()
@@ -431,20 +547,68 @@ Respond strictly in JSON format:
     db.commit()
     db.refresh(agent_msg)
 
-    # Reload fresh schedule
-    updated_blocks = db.query(ScheduleBlock).filter(
+    # Reload fresh schedules for both today and tomorrow
+    today_updated = db.query(ScheduleBlock).filter(
         ScheduleBlock.user_id == user.id,
         ScheduleBlock.scheduled_date == today_str
     ).order_by(ScheduleBlock.start_time.asc()).all()
+
+    tomorrow_updated = db.query(ScheduleBlock).filter(
+        ScheduleBlock.user_id == user.id,
+        ScheduleBlock.scheduled_date == tomorrow_str
+    ).order_by(ScheduleBlock.start_time.asc()).all()
+
+    def serialize_block(b):
+        return {
+            "id": b.id,
+            "title": b.title,
+            "block_type": b.block_type,
+            "start_time": b.start_time,
+            "end_time": b.end_time,
+            "duration_minutes": b.duration_minutes,
+            "is_completed": b.is_completed,
+            "status": b.status,
+            "delay_count": b.delay_count,
+            "scheduled_date": b.scheduled_date
+        }
 
     return {
         "reply": reply_text,
         "message_id": agent_msg.id,
         "action_taken": action,
         "show_schedule_widget": show_schedule_widget,
-        "schedule": [
+        "schedule": [serialize_block(b) for b in today_updated],
+        "tomorrow_schedule": [serialize_block(b) for b in tomorrow_updated],
+        "quick_actions": quick_actions
+    }
+
+async def run_auto_plan(db: Session, user: User) -> Dict[str, Any]:
+    """
+    Agentic Auto-Plan Core Brain:
+    1. Backs up existing manual baseline for Today & Tomorrow if not already backed up.
+    2. Gathers missed/incomplete tasks from yesterday and today.
+    3. Gathers recent conversation context to understand Atharv's current focus, commitments, and habits.
+    4. Rebalances schedules for Today & Tomorrow (ensuring no time conflicts, placing missed tasks into optimal slots).
+    5. Tags rebalanced tasks with status='AI_SCHEDULED' or 'CARRIED_OVER'.
+    6. Returns rebalanced schedules and an executive summary.
+    """
+    today_str = datetime.date.today().isoformat()
+    yesterday_str = (datetime.date.today() - datetime.timedelta(days=1)).isoformat()
+    tomorrow_str = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
+
+    # Step 1: Save baseline snapshot if not already present
+    baseline_setting = db.query(ServerSetting).filter(
+        ServerSetting.key == f"baseline_schedule_{user.id}"
+    ).first()
+
+    current_blocks = db.query(ScheduleBlock).filter(
+        ScheduleBlock.user_id == user.id,
+        ScheduleBlock.scheduled_date.in_([today_str, tomorrow_str])
+    ).all()
+
+    if not baseline_setting:
+        snapshot = [
             {
-                "id": b.id,
                 "title": b.title,
                 "block_type": b.block_type,
                 "start_time": b.start_time,
@@ -454,7 +618,260 @@ Respond strictly in JSON format:
                 "status": b.status,
                 "delay_count": b.delay_count,
                 "scheduled_date": b.scheduled_date
-            } for b in updated_blocks
-        ],
-        "quick_actions": quick_actions
+            }
+            for b in current_blocks
+        ]
+        baseline_setting = ServerSetting(
+            key=f"baseline_schedule_{user.id}",
+            value=json.dumps(snapshot)
+        )
+        db.add(baseline_setting)
+        db.commit()
+
+    # Step 2: Fetch missed tasks from yesterday
+    yesterday_missed = db.query(ScheduleBlock).filter(
+        ScheduleBlock.user_id == user.id,
+        ScheduleBlock.scheduled_date == yesterday_str,
+        ScheduleBlock.is_completed == False,
+        ScheduleBlock.block_type != "SLEEP"
+    ).all()
+
+    # Step 3: Fetch recent chat messages for priorities & intent
+    recent_msgs = db.query(ChatMessage).filter(
+        ChatMessage.user_id == user.id
+    ).order_by(ChatMessage.created_at.desc()).limit(15).all()
+    recent_msgs.reverse()
+    chat_summary = "\n".join([f"{m.sender}: {m.content}" for m in recent_msgs])
+
+    today_blocks = [b for b in current_blocks if b.scheduled_date == today_str]
+    tomorrow_blocks = [b for b in current_blocks if b.scheduled_date == tomorrow_str]
+
+    # Step 4: AI Rebalance prompt
+    ai_prompt = f"""You are the NEXUS Executive Schedule Intelligence Engine.
+Atharv has engaged Agentic Auto-Plan. Your job is to analyze his recent messages, missed tasks from yesterday, and today's/tomorrow's schedule to create an optimal, high-performance rebalanced schedule for Today ({today_str}) and Tomorrow ({tomorrow_str}).
+
+CONVERSATION CONTEXT & PRIORITIES:
+{chat_summary or 'Standard executive productivity routine.'}
+
+MISSED INCOMPLETE TASKS FROM YESTERDAY ({yesterday_str}):
+{chr(10).join([f"- {b.title} ({b.block_type}, {b.duration_minutes}m)" for b in yesterday_missed]) if yesterday_missed else 'None'}
+
+EXISTING TASKS TODAY ({today_str}):
+{chr(10).join([f"- [ID {b.id}] {b.start_time}-{b.end_time}: {b.title} ({b.block_type}, completed={b.is_completed})" for b in today_blocks]) if today_blocks else 'None'}
+
+EXISTING TASKS TOMORROW ({tomorrow_str}):
+{chr(10).join([f"- [ID {b.id}] {b.start_time}-{b.end_time}: {b.title} ({b.block_type}, completed={b.is_completed})" for b in tomorrow_blocks]) if tomorrow_blocks else 'None'}
+
+RULES:
+1. Carry over any missed tasks from yesterday (especially Gym, Work, or critical focus blocks) into Today or Tomorrow if not already completed or present.
+2. Rebalance tasks into realistic non-overlapping time slots respecting circadian rhythm:
+   - Morning Workout / Gym (07:00-08:00 or morning)
+   - Morning Focus / Execution Blocks (09:00-11:30)
+   - Lunch / Walk Transition (12:00-13:00)
+   - Afternoon Deep Work (13:30-15:30)
+   - NSDR Power Nap / Rest (15:30-15:55)
+   - SaaS / Late Sprint (16:30-18:30)
+   - Evening Wind-down / Personal Downtime (19:30-21:30)
+   - Sleep lock ({user.bedtime or '23:30'})
+3. Retain completed tasks as completed with their recorded times.
+4. Mark newly added, carried over, or rescheduled uncompleted tasks with status "AI_SCHEDULED" or "CARRIED_OVER".
+5. Provide a crisp, professional 1-sentence executive summary (no asterisks).
+
+Respond strictly in JSON format:
+{{
+  "summary": "Crisp executive summary of schedule optimization and rebalancing",
+  "today_schedule": [
+     {{"title": "Task Title", "block_type": "FOCUS", "start_time": "HH:MM", "end_time": "HH:MM", "duration_minutes": 60, "status": "AI_SCHEDULED", "is_completed": false}}
+  ],
+  "tomorrow_schedule": [
+     {{"title": "Task Title", "block_type": "FOCUS", "start_time": "HH:MM", "end_time": "HH:MM", "duration_minutes": 60, "status": "AI_SCHEDULED", "is_completed": false}}
+  ]
+}}"""
+
+    llm_res = await execute_chat(db, ai_prompt, "Rebalance schedule now.", json_mode=True)
+    summary_text = "Schedule rebalanced and optimized across focus windows."
+    plan_applied = False
+
+    if llm_res.get("success"):
+        try:
+            parsed = json.loads(llm_res.get("content", "{}"))
+            llm_today = parsed.get("today_schedule", [])
+            llm_tomorrow = parsed.get("tomorrow_schedule", [])
+            summary_text = parsed.get("summary", summary_text).replace("**", "")
+
+            if llm_today or llm_tomorrow:
+                # Remove uncompleted blocks for today and tomorrow to replace with optimized ones, keeping completed blocks intact!
+                db.query(ScheduleBlock).filter(
+                    ScheduleBlock.user_id == user.id,
+                    ScheduleBlock.scheduled_date.in_([today_str, tomorrow_str]),
+                    ScheduleBlock.is_completed == False
+                ).delete(synchronize_session=False)
+
+                for item in llm_today:
+                    if item.get("is_completed"): continue
+                    b = ScheduleBlock(
+                        user_id=user.id,
+                        title=item.get("title", "Focus Session"),
+                        block_type=item.get("block_type", "FOCUS"),
+                        start_time=item.get("start_time", "10:00"),
+                        end_time=item.get("end_time", "11:00"),
+                        duration_minutes=item.get("duration_minutes", 60),
+                        scheduled_date=today_str,
+                        status=item.get("status", "AI_SCHEDULED"),
+                        is_completed=False,
+                        delay_count=0
+                    )
+                    db.add(b)
+
+                for item in llm_tomorrow:
+                    if item.get("is_completed"): continue
+                    b = ScheduleBlock(
+                        user_id=user.id,
+                        title=item.get("title", "Focus Session"),
+                        block_type=item.get("block_type", "FOCUS"),
+                        start_time=item.get("start_time", "10:00"),
+                        end_time=item.get("end_time", "11:00"),
+                        duration_minutes=item.get("duration_minutes", 60),
+                        scheduled_date=tomorrow_str,
+                        status=item.get("status", "AI_SCHEDULED"),
+                        is_completed=False,
+                        delay_count=0
+                    )
+                    db.add(b)
+
+                db.commit()
+                plan_applied = True
+        except Exception as e:
+            print("Auto-plan LLM parsing error, falling back to algorithmic rebalancer:", e)
+
+    # Fallback algorithmic rebalancer if LLM was unavailable or returned empty
+    if not plan_applied:
+        # Check missed tasks from yesterday
+        carried_count = 0
+        for ym in yesterday_missed:
+            exists = db.query(ScheduleBlock).filter(
+                ScheduleBlock.user_id == user.id,
+                ScheduleBlock.scheduled_date == today_str,
+                ScheduleBlock.title == ym.title
+            ).first()
+            if not exists:
+                new_block = ScheduleBlock(
+                    user_id=user.id,
+                    title=ym.title,
+                    block_type=ym.block_type,
+                    start_time=ym.start_time,
+                    end_time=ym.end_time,
+                    duration_minutes=ym.duration_minutes,
+                    scheduled_date=today_str,
+                    status="CARRIED_OVER",
+                    is_completed=False,
+                    delay_count=0
+                )
+                db.add(new_block)
+                carried_count += 1
+        db.commit()
+        summary_text = f"Carried over {carried_count} missed task(s) and rebalanced your timeline."
+
+    # Fetch fresh blocks
+    today_res = db.query(ScheduleBlock).filter(
+        ScheduleBlock.user_id == user.id,
+        ScheduleBlock.scheduled_date == today_str
+    ).order_by(ScheduleBlock.start_time.asc()).all()
+
+    tomorrow_res = db.query(ScheduleBlock).filter(
+        ScheduleBlock.user_id == user.id,
+        ScheduleBlock.scheduled_date == tomorrow_str
+    ).order_by(ScheduleBlock.start_time.asc()).all()
+
+    def serialize_block(b):
+        return {
+            "id": b.id,
+            "title": b.title,
+            "block_type": b.block_type,
+            "start_time": b.start_time,
+            "end_time": b.end_time,
+            "duration_minutes": b.duration_minutes,
+            "is_completed": b.is_completed,
+            "status": b.status,
+            "delay_count": b.delay_count,
+            "scheduled_date": b.scheduled_date
+        }
+
+    return {
+        "success": True,
+        "summary": summary_text,
+        "today_schedule": [serialize_block(b) for b in today_res],
+        "tomorrow_schedule": [serialize_block(b) for b in tomorrow_res]
+    }
+
+def revert_auto_plan(db: Session, user: User) -> Dict[str, Any]:
+    """
+    Reverts Today and Tomorrow schedule to the baseline snapshot taken before Auto-Plan.
+    """
+    today_str = datetime.date.today().isoformat()
+    tomorrow_str = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
+
+    baseline_setting = db.query(ServerSetting).filter(
+        ServerSetting.key == f"baseline_schedule_{user.id}"
+    ).first()
+
+    if baseline_setting:
+        try:
+            snapshot = json.loads(baseline_setting.value)
+            # Delete current uncompleted blocks on today and tomorrow
+            db.query(ScheduleBlock).filter(
+                ScheduleBlock.user_id == user.id,
+                ScheduleBlock.scheduled_date.in_([today_str, tomorrow_str]),
+                ScheduleBlock.is_completed == False
+            ).delete(synchronize_session=False)
+
+            # Re-insert baseline blocks
+            for item in snapshot:
+                b = ScheduleBlock(
+                    user_id=user.id,
+                    title=item["title"],
+                    block_type=item.get("block_type", "FOCUS"),
+                    start_time=item["start_time"],
+                    end_time=item["end_time"],
+                    duration_minutes=item.get("duration_minutes", 60),
+                    scheduled_date=item["scheduled_date"],
+                    status=item.get("status", "UPCOMING"),
+                    is_completed=item.get("is_completed", False),
+                    delay_count=item.get("delay_count", 0)
+                )
+                db.add(b)
+            db.delete(baseline_setting)
+            db.commit()
+        except Exception as e:
+            print("Error reverting auto-plan baseline:", e)
+
+    today_res = db.query(ScheduleBlock).filter(
+        ScheduleBlock.user_id == user.id,
+        ScheduleBlock.scheduled_date == today_str
+    ).order_by(ScheduleBlock.start_time.asc()).all()
+
+    tomorrow_res = db.query(ScheduleBlock).filter(
+        ScheduleBlock.user_id == user.id,
+        ScheduleBlock.scheduled_date == tomorrow_str
+    ).order_by(ScheduleBlock.start_time.asc()).all()
+
+    def serialize_block(b):
+        return {
+            "id": b.id,
+            "title": b.title,
+            "block_type": b.block_type,
+            "start_time": b.start_time,
+            "end_time": b.end_time,
+            "duration_minutes": b.duration_minutes,
+            "is_completed": b.is_completed,
+            "status": b.status,
+            "delay_count": b.delay_count,
+            "scheduled_date": b.scheduled_date
+        }
+
+    return {
+        "success": True,
+        "summary": "Reverted to manual schedule.",
+        "today_schedule": [serialize_block(b) for b in today_res],
+        "tomorrow_schedule": [serialize_block(b) for b in tomorrow_res]
     }

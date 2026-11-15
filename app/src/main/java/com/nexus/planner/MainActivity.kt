@@ -233,6 +233,7 @@ class MainActivity : ComponentActivity() {
                                         todayTasks = chatState.todaySchedule,
                                         tomorrowTasks = chatState.tomorrowSchedule,
                                         isAutoPlanEnabled = chatState.isAutoPlanEnabled,
+                                        isLoading = chatState.isLoading,
                                         onToggleTask = { blockId, isTomorrow -> chatViewModel.toggleTask(blockId, isTomorrow) },
                                         onToggleAutoPlan = { chatViewModel.toggleAutoPlan() },
                                         onTriggerAlarm = { task -> chatViewModel.triggerAlarmForTask(task) },

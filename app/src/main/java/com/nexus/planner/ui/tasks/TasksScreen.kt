@@ -1,5 +1,6 @@
 package com.nexus.planner.ui.tasks
 
+import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -28,6 +29,7 @@ fun TasksScreen(
     todayTasks: List<ServerScheduleBlockDto>,
     tomorrowTasks: List<ServerScheduleBlockDto>,
     isAutoPlanEnabled: Boolean,
+    isLoading: Boolean = false,
     onToggleTask: (Long, Boolean) -> Unit,
     onToggleAutoPlan: () -> Unit,
     onTriggerAlarm: (ServerScheduleBlockDto) -> Unit,
@@ -154,6 +156,41 @@ fun TasksScreen(
                             uncheckedTrackColor = Zinc800
                         )
                     )
+                }
+            }
+
+            // Animated Processing Pop-up Banner (Auto-Plan / Rebalance in progress)
+            AnimatedVisibility(
+                visible = isLoading,
+                enter = expandVertically() + fadeIn(),
+                exit = shrinkVertically() + fadeOut()
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    color = Color(0xFF18181B),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, Emerald400.copy(alpha = 0.5f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(13.dp),
+                            strokeWidth = 2.dp,
+                            color = Emerald400
+                        )
+                        Text(
+                            text = "⚡ Auto-Plan is analyzing & rebalancing...",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 11.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Emerald400
+                        )
+                    }
                 }
             }
 
@@ -383,7 +420,8 @@ fun TaskListItem(
                             color = if (task.is_completed) Zinc500 else Color.White,
                             textDecoration = if (task.is_completed) TextDecoration.LineThrough else TextDecoration.None
                         )
-                        if (isAutoPlanEnabled && !task.is_completed) {
+                        val isAiManaged = task.status == "AI_SCHEDULED" || task.status == "CARRIED_OVER"
+                        if (isAiManaged && !task.is_completed) {
                             Text(text = "✨", fontSize = 11.sp)
                         }
                         if (isCarriedOver) {

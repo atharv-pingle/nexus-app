@@ -106,17 +106,14 @@ class ChatAssistantViewModel(
                     it.copy(
                         messages = it.messages + agentMsg,
                         todaySchedule = if (resp.schedule.isNotEmpty()) resp.schedule else it.todaySchedule,
+                        tomorrowSchedule = if (resp.tomorrow_schedule.isNotEmpty()) resp.tomorrow_schedule else it.tomorrowSchedule,
                         showScheduleInChat = resp.show_schedule_widget,
                         pushupsCount = if (isPushups) it.pushupsCount + 10 else it.pushupsCount,
                         isLoading = false
                     )
                 }
-                // Refresh tomorrow's schedule as well if user referenced tomorrow
-                if (trimmed.contains("tomorrow", ignoreCase = true)) {
-                    apiClient.fetchTomorrowSchedule().onSuccess { tomorrowBlocks ->
-                        _uiState.update { it.copy(tomorrowSchedule = tomorrowBlocks) }
-                    }
-                }
+                // Refetch both today and tomorrow to ensure 100% full sync
+                loadData()
             }.onFailure { err ->
                 _uiState.update { 
                     it.copy(
@@ -150,13 +147,48 @@ class ChatAssistantViewModel(
 
     fun toggleAutoPlan() {
         val next = !_uiState.value.isAutoPlanEnabled
-        _uiState.update { 
-            it.copy(
-                isAutoPlanEnabled = next,
-                toastNotice = if (next) "Dynamic AI schedule active" else "Manual schedule active"
-            ) 
+        _uiState.update { it.copy(isLoading = true) }
+        viewModelScope.launch {
+            if (next) {
+                apiClient.triggerAutoPlan().onSuccess { res ->
+                    _uiState.update {
+                        it.copy(
+                            isAutoPlanEnabled = true,
+                            todaySchedule = res.today_schedule,
+                            tomorrowSchedule = res.tomorrow_schedule,
+                            isLoading = false,
+                            toastNotice = res.summary ?: "Dynamic AI schedule rebalanced"
+                        )
+                    }
+                }.onFailure { err ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            toastNotice = "Auto-Plan sync failed: ${err.message}"
+                        )
+                    }
+                }
+            } else {
+                apiClient.revertAutoPlan().onSuccess { res ->
+                    _uiState.update {
+                        it.copy(
+                            isAutoPlanEnabled = false,
+                            todaySchedule = res.today_schedule,
+                            tomorrowSchedule = res.tomorrow_schedule,
+                            isLoading = false,
+                            toastNotice = "Manual schedule active"
+                        )
+                    }
+                }.onFailure { err ->
+                    _uiState.update {
+                        it.copy(
+                            isLoading = false,
+                            toastNotice = "Revert failed: ${err.message}"
+                        )
+                    }
+                }
+            }
         }
-        loadData()
     }
 
     fun updateTask(

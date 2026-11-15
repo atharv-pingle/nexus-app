@@ -91,7 +91,13 @@ async def execute_chat(
         async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(OPENROUTER_URL, headers=headers, json=body)
             if resp.status_code != 200:
-                return {"success": False, "error": f"OpenRouter Error {resp.status_code}: {resp.text}"}
+                # If model rejected response_format, retry without it
+                if json_mode and ("response_format" in resp.text or "format" in resp.text.lower()):
+                    body_fallback = dict(body)
+                    body_fallback.pop("response_format", None)
+                    resp = await client.post(OPENROUTER_URL, headers=headers, json=body_fallback)
+                if resp.status_code != 200:
+                    return {"success": False, "error": f"OpenRouter Error {resp.status_code}: {resp.text}"}
             
             data = resp.json()
             choice = (data.get("choices") or [{}])[0]
