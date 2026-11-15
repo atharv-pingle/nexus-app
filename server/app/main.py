@@ -430,6 +430,60 @@ async def create_quick_task(
         scheduled_date=b.scheduled_date
     )
 
+class TaskUpdateSchema(BaseModel):
+    title: Optional[str] = None
+    start_time: Optional[str] = None
+    duration_minutes: Optional[int] = None
+    scheduled_date: Optional[str] = None
+    block_type: Optional[str] = None
+    is_completed: Optional[bool] = None
+
+@app.put("/api/v1/schedule/blocks/{block_id}", response_model=ScheduleBlockSchema)
+async def update_block(
+    block_id: int,
+    payload: TaskUpdateSchema,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    block = db.query(ScheduleBlock).filter(
+        ScheduleBlock.id == block_id,
+        ScheduleBlock.user_id == current_user.id
+    ).first()
+    if not block:
+        raise HTTPException(status_code=404, detail="Block not found")
+        
+    if payload.title is not None:
+        block.title = payload.title
+    if payload.start_time is not None:
+        block.start_time = payload.start_time
+    if payload.duration_minutes is not None:
+        block.duration_minutes = payload.duration_minutes
+    if payload.start_time is not None or payload.duration_minutes is not None:
+        start_m = parse_time_to_minutes(block.start_time)
+        block.end_time = format_minutes_to_time(start_m + block.duration_minutes)
+    if payload.scheduled_date is not None:
+        block.scheduled_date = payload.scheduled_date
+    if payload.block_type is not None:
+        block.block_type = payload.block_type
+    if payload.is_completed is not None:
+        block.is_completed = payload.is_completed
+        block.status = "COMPLETED" if payload.is_completed else "UPCOMING"
+        
+    db.commit()
+    db.refresh(block)
+    return ScheduleBlockSchema(
+        id=block.id,
+        title=block.title,
+        block_type=block.block_type,
+        start_time=block.start_time,
+        end_time=block.end_time,
+        duration_minutes=block.duration_minutes,
+        is_completed=block.is_completed,
+        status=block.status,
+        delay_count=block.delay_count,
+        scheduled_date=block.scheduled_date
+    )
+
 @app.delete("/api/v1/schedule/blocks/{block_id}")
 async def delete_block(
     block_id: int,

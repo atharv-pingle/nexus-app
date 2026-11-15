@@ -57,7 +57,8 @@ async def execute_chat(
     system_prompt: str,
     user_prompt: str,
     model: Optional[str] = None,
-    json_mode: bool = False
+    json_mode: bool = False,
+    conversation_history: Optional[List[Dict[str, str]]] = None
 ) -> Dict[str, Any]:
     api_key = get_setting(db, "openrouter_api_key")
     if not api_key:
@@ -72,10 +73,10 @@ async def execute_chat(
         "X-Title": "Nexus Autonomous Agent"
     }
     
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt}
-    ]
+    messages = [{"role": "system", "content": system_prompt}]
+    if conversation_history:
+        messages.extend(conversation_history)
+    messages.append({"role": "user", "content": user_prompt})
     
     body: Dict[str, Any] = {
         "model": selected_model,

@@ -48,6 +48,17 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(true)
+            setTurnScreenOn(true)
+        } else {
+            @Suppress("DEPRECATION")
+            window.addFlags(
+                android.view.WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                android.view.WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
+            )
+        }
+
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestAudioPermission.launch(Manifest.permission.RECORD_AUDIO)
         }
@@ -226,7 +237,10 @@ class MainActivity : ComponentActivity() {
                                         onToggleAutoPlan = { chatViewModel.toggleAutoPlan() },
                                         onTriggerAlarm = { task -> chatViewModel.triggerAlarmForTask(task) },
                                         onQuickAddTask = { title, isTomorrow -> chatViewModel.createQuickTask(title, isTomorrow = isTomorrow) },
-                                        onDeleteTask = { blockId -> chatViewModel.deleteTask(blockId) }
+                                        onDeleteTask = { blockId -> chatViewModel.deleteTask(blockId) },
+                                        onUpdateTask = { blockId, title, startTime, duration, isTomorrow ->
+                                            chatViewModel.updateTask(blockId, title, startTime, duration, isTomorrow)
+                                        }
                                     )
                                     2 -> StatsScreen(
                                         pushupsCount = chatState.pushupsCount,

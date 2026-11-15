@@ -99,3 +99,13 @@ data class ServerQuickTaskCreateDto(
     val scheduled_date: String? = null,
     val block_type: String = "FOCUS"
 )
+
+@Serializable
+data class ServerTaskUpdateDto(
+    val title: String? = null,
+    val start_time: String? = null,
+    val duration_minutes: Int? = null,
+    val scheduled_date: String? = null,
+    val block_type: String? = null,
+    val is_completed: Boolean? = null
+)

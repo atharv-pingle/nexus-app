@@ -205,13 +205,26 @@ async def check_proactive_interventions(db: Session, user: User, now_time_str: O
 async def handle_agent_dialogue(db: Session, user: User, user_text: str) -> Dict[str, Any]:
     """
     Main conversational agent brain:
-    Processes user input, accesses user memory & live schedule,
-    applies schedule/fitness adjustments, adds tasks dynamically, and returns an executive assistant response.
+    Processes user input with multi-turn memory & two-day schedule awareness (Today & Tomorrow),
+    executes dynamic task operations (ADD, MOVE, UPDATE, COMPLETE, DELAY), and returns a sleek executive assistant response.
     """
     today_str = datetime.date.today().isoformat()
-    blocks = ensure_full_day_schedule(db, user, today_str)
-    
-    # Store user message
+    tomorrow_str = (datetime.date.today() + datetime.timedelta(days=1)).isoformat()
+
+    # Retrieve past conversation turns for rolling memory
+    past_msgs = db.query(ChatMessage).filter(
+        ChatMessage.user_id == user.id
+    ).order_by(ChatMessage.created_at.desc()).limit(8).all()
+    past_msgs.reverse()
+
+    conv_history = []
+    for m in past_msgs:
+        conv_history.append({
+            "role": "user" if m.sender == "user" else "assistant",
+            "content": m.content
+        })
+
+    # Store incoming user message
     user_msg = ChatMessage(
         user_id=user.id,
         sender="user",
@@ -221,33 +234,40 @@ async def handle_agent_dialogue(db: Session, user: User, user_text: str) -> Dict
     db.add(user_msg)
     db.commit()
 
-    # Build context for LLM
-    sched_summary = []
-    for b in blocks:
-        st = "✓" if b.is_completed else ("⏱️" if b.status == "DELAYED" else "○")
-        sched_summary.append(f"{st} [{b.id}] {b.start_time}-{b.end_time}: {b.title} ({b.block_type})")
-        
-    sched_text = "\n".join(sched_summary)
-    
+    # Fetch live blocks for Today and Tomorrow
+    today_blocks = ensure_full_day_schedule(db, user, today_str)
+    tomorrow_blocks = ensure_full_day_schedule(db, user, tomorrow_str)
+
+    today_summary = [f"{'✓' if b.is_completed else '○'} [ID {b.id}] {b.start_time}-{b.end_time}: {b.title} ({b.block_type})" for b in today_blocks]
+    tomorrow_summary = [f"{'✓' if b.is_completed else '○'} [ID {b.id}] {b.start_time}-{b.end_time}: {b.title} ({b.block_type})" for b in tomorrow_blocks]
+
+    today_sched_text = "\n".join(today_summary) if today_summary else "No tasks scheduled for today."
+    tomorrow_sched_text = "\n".join(tomorrow_summary) if tomorrow_summary else "No tasks scheduled for tomorrow."
+
     sys_prompt = f"""You are NEXUS, an autonomous, highly capable personal executive assistant.
-You actively manage Atharv's time, focus, and physical fitness throughout the entire day until sleep ({user.bedtime or '23:30'}).
+You actively manage Atharv's time, focus, and schedule across Today and Tomorrow until sleep ({user.bedtime or '23:30'}).
 Key responsibilities:
 1. Always be direct, supportive, and action-oriented with motivating contextual emojis (🎯, 💪, ⚡, 🔋, 🌙, 🚀, 💥, 👋, ⏱️).
-2. If Atharv asks to add a task (e.g. "add task to review PR at 4 PM" or "add grocery shopping at 7 PM"), set action="ADD_TASK", specify task_title, start_time (HH:MM 24h format), and duration_minutes (default 30).
-3. If Atharv completed a task or did pushups, set action="COMPLETE_TASK".
-4. If Atharv asks to show schedule or see his tasks, set show_schedule_widget=true.
+2. If Atharv asks to move or reschedule a task (e.g. "move tomorrow gym task to today" or "move it to today at 6 PM"), set action="MOVE_TASK", specify target_block_id (if identifiable) or task_title, target_date ("today" or "tomorrow"), and start_time (HH:MM 24h format).
+3. If Atharv asks to add a task, set action="ADD_TASK", specify task_title, target_date ("today" or "tomorrow"), start_time (HH:MM 24h), and duration_minutes (default 45).
+4. If Atharv completed a task or did pushups, set action="COMPLETE_TASK".
 5. If Atharv says a meeting ran over or asks to delay, set action="DELAY_SCHEDULE" and specify delay_minutes.
+6. Never output raw markdown asterisks (**) in your reply. Use clean typography.
 
-CURRENT SCHEDULE TODAY:
-{sched_text}
+TODAY'S SCHEDULE ({today_str}):
+{today_sched_text}
 
-Respond in JSON format:
+TOMORROW'S SCHEDULE ({tomorrow_str}):
+{tomorrow_sched_text}
+
+Respond strictly in JSON format:
 {{
-  "reply": "Conversational reply speaking directly to Atharv with contextual emojis.",
-  "action": "NONE" | "ADD_TASK" | "COMPLETE_TASK" | "DELAY_SCHEDULE" | "ADD_PUSHUPS",
+  "reply": "Conversational reply speaking directly to Atharv with contextual emojis (no asterisks).",
+  "action": "NONE" | "ADD_TASK" | "MOVE_TASK" | "UPDATE_TASK" | "COMPLETE_TASK" | "DELAY_SCHEDULE" | "ADD_PUSHUPS",
   "task_title": null or string,
+  "target_date": "today" | "tomorrow",
   "start_time": null or "HH:MM",
-  "duration_minutes": 30,
+  "duration_minutes": 45,
   "block_type": "FOCUS" | "FITNESS_NUDGE" | "WORKOUT" | "TRANSITION" | "SAAS",
   "target_block_id": null or integer block id,
   "delay_minutes": 0 or integer,
@@ -257,12 +277,13 @@ Respond in JSON format:
   ]
 }}"""
 
-    res = await execute_chat(db, sys_prompt, f"Atharv: {user_text}", json_mode=True)
+    res = await execute_chat(db, sys_prompt, f"Atharv: {user_text}", json_mode=True, conversation_history=conv_history)
     reply_text = "Got it, Atharv! 🚀 Synced with your memory and day timeline."
     action = "NONE"
     task_title = None
+    target_date = "today"
     start_time = None
-    duration_mins = 30
+    duration_mins = 45
     block_type = "FOCUS"
     target_id = None
     delay_mins = 0
@@ -272,11 +293,12 @@ Respond in JSON format:
     if res.get("success"):
         try:
             parsed = json.loads(res.get("content", "{}"))
-            reply_text = parsed.get("reply", reply_text)
+            reply_text = parsed.get("reply", reply_text).replace("**", "")
             action = parsed.get("action", "NONE")
             task_title = parsed.get("task_title")
+            target_date = parsed.get("target_date", "today")
             start_time = parsed.get("start_time")
-            duration_mins = parsed.get("duration_minutes", 30)
+            duration_mins = parsed.get("duration_minutes", 45)
             block_type = parsed.get("block_type", "FOCUS")
             target_id = parsed.get("target_block_id")
             delay_mins = parsed.get("delay_minutes", 0)
@@ -285,17 +307,23 @@ Respond in JSON format:
         except Exception as e:
             print("Error parsing LLM JSON:", e)
 
-    # Fallback heuristic intent detection
+    # Heuristic intent detection
     lower = user_text.lower()
-    if ("add " in lower or "schedule " in lower or "new task" in lower) and not task_title:
+    is_for_tomorrow = ("tomorrow" in lower) or (target_date == "tomorrow")
+    target_date_str = tomorrow_str if is_for_tomorrow else today_str
+
+    if ("move" in lower or "reschedule" in lower or "instead of" in lower) and action == "NONE":
+        action = "MOVE_TASK"
+        if "gym" in lower:
+            task_title = "Gym"
+
+    if ("add " in lower or "schedule " in lower or "new task" in lower) and not task_title and action != "MOVE_TASK":
         action = "ADD_TASK"
-        # Extract title and possible time
         clean_title = re.sub(r'^(please\s+)?(add|schedule|create)(\s+a)?(\s+task)?(\s+to)?\s+', '', user_text, flags=re.IGNORECASE).strip()
         time_match = re.search(r'at\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)', clean_title, flags=re.IGNORECASE)
         if time_match:
             time_str = time_match.group(1).lower().strip()
             clean_title = clean_title.replace(time_match.group(0), '').strip()
-            # Parse hour
             try:
                 if "pm" in time_str:
                     h = int(re.sub(r'[^\d]', '', time_str.split(':')[0]))
@@ -308,12 +336,12 @@ Respond in JSON format:
                     parts = time_str.split(':')
                     start_time = f"{int(parts[0]):02d}:{int(parts[1]) if len(parts) > 1 else 0:02d}"
             except Exception:
-                start_time = "16:00"
-        task_title = clean_title.strip() or "New Focused Task"
+                start_time = "10:00"
+        task_title = clean_title.strip() or "Focused Session"
 
     if "pushup" in lower and ("did" in lower or "done" in lower or "finished" in lower or "crushed" in lower):
         action = "COMPLETE_TASK"
-        for b in blocks:
+        for b in today_blocks:
             if b.block_type == "FITNESS_NUDGE" and not b.is_completed:
                 target_id = b.id
                 break
@@ -327,13 +355,34 @@ Respond in JSON format:
     if "show" in lower or "what is my schedule" in lower or "what's next" in lower or "my plan" in lower:
         show_schedule_widget = True
 
-    is_for_tomorrow = "tomorrow" in lower
-    target_date_str = (datetime.date.today() + datetime.timedelta(days=1)).isoformat() if is_for_tomorrow else today_str
-
     # ---------------- EXECUTE AGENT ACTIONS ----------------
-    if action == "ADD_TASK" and task_title:
+    if action == "MOVE_TASK":
+        block_to_move = None
+        if target_id:
+            block_to_move = db.query(ScheduleBlock).filter(ScheduleBlock.id == target_id, ScheduleBlock.user_id == user.id).first()
+        if not block_to_move and task_title:
+            block_to_move = db.query(ScheduleBlock).filter(
+                ScheduleBlock.user_id == user.id,
+                ScheduleBlock.title.ilike(f"%{task_title}%")
+            ).order_by(ScheduleBlock.id.desc()).first()
+            
+        if block_to_move:
+            # If user said "move to today", target is today
+            dest_date = today_str if ("today" in lower or target_date == "today") else tomorrow_str
+            block_to_move.scheduled_date = dest_date
+            if start_time:
+                start_m = parse_time_to_minutes(start_time)
+                block_to_move.start_time = start_time
+                block_to_move.end_time = format_minutes_to_time(start_m + block_to_move.duration_minutes)
+            db.commit()
+            dest_label = "today" if dest_date == today_str else "tomorrow"
+            reply_text = f"Done, Atharv! 🎯 Moved '{block_to_move.title}' to {dest_label} at {block_to_move.start_time}–{block_to_move.end_time}. Your schedule has been auto-rebalanced! ⚡"
+        else:
+            reply_text = f"I couldn't find a matching task to move. Check your tasks tab and let me know the title or time! 🎯"
+
+    elif action == "ADD_TASK" and task_title:
         if not start_time:
-            first_upcoming = next((b for b in blocks if not b.is_completed and b.block_type != "SLEEP"), None)
+            first_upcoming = next((b for b in today_blocks if not b.is_completed and b.block_type != "SLEEP"), None)
             start_time = first_upcoming.start_time if first_upcoming else "10:00"
             
         start_m = parse_time_to_minutes(start_time)
@@ -354,20 +403,6 @@ Respond in JSON format:
         db.add(new_block)
         db.commit()
         
-        # Shift overlapping subsequent blocks
-        overlapping = db.query(ScheduleBlock).filter(
-            ScheduleBlock.user_id == user.id,
-            ScheduleBlock.scheduled_date == target_date_str,
-            ScheduleBlock.id != new_block.id,
-            ScheduleBlock.is_completed == False,
-            ScheduleBlock.block_type != "SLEEP"
-        ).all()
-        for ob in overlapping:
-            ob_start_m = parse_time_to_minutes(ob.start_time)
-            if start_m <= ob_start_m < (start_m + duration_mins):
-                shift_remaining_blocks(db, user.id, target_date_str, ob.id, duration_mins)
-                break
-                
         day_label = "tomorrow" if is_for_tomorrow else "today"
         reply_text = f"Got it, Atharv! 🎯 Added '{task_title}' for {day_label} at {start_time}–{end_time}. Check your tasks tab to view it!"
 
@@ -379,10 +414,10 @@ Respond in JSON format:
             db.commit()
 
     elif action == "DELAY_SCHEDULE" and delay_mins > 0:
-        first_inc = next((b for b in blocks if not b.is_completed), None)
+        first_inc = next((b for b in today_blocks if not b.is_completed), None)
         if first_inc:
             shift_remaining_blocks(db, user.id, today_str, first_inc.id, delay_mins)
-            reply_text = f"Understood! ⏱️ Shifted your remaining afternoon schedule by +{delay_mins} mins without guilt."
+            reply_text = f"Understood! ⏱️ Shifted your remaining schedule by +{delay_mins} mins without guilt."
 
     # Save agent response to chat history
     agent_msg = ChatMessage(

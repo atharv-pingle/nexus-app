@@ -66,6 +66,78 @@ fun StatsScreen(
                 )
             }
 
+            // Daily Executive Brief & Motivational Momentum Card
+            item {
+                Surface(
+                    color = Zinc950,
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, Zinc800)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text("🎯", fontSize = 14.sp)
+                                Text(
+                                    text = "DAILY EXECUTIVE BRIEF",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White,
+                                    letterSpacing = 0.5.sp
+                                )
+                            }
+                            Text(
+                                text = "NEXUS AI",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Emerald400
+                            )
+                        }
+
+                        Text(
+                            text = "You're operating at high momentum. Your deep work blocks and physical resets are aligned. Protect your evening wind-down and maintain consistency.",
+                            fontSize = 13.sp,
+                            lineHeight = 19.sp,
+                            color = Zinc300
+                        )
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "⚡ Momentum High",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                color = Emerald400
+                            )
+                            Text(
+                                text = "💪 $pushupsCount Pushups Logged",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                color = Zinc400
+                            )
+                        }
+                    }
+                }
+            }
+
             // Focus Planning Velocity Card (Replaced 66-day habit challenge)
             item {
                 Surface(

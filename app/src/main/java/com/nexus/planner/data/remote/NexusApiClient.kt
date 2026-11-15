@@ -141,6 +141,43 @@ class NexusApiClient(
         }
     }
 
+    suspend fun updateBlock(
+        blockId: Long,
+        title: String? = null,
+        startTime: String? = null,
+        durationMinutes: Int? = null,
+        scheduledDate: String? = null,
+        isCompleted: Boolean? = null
+    ): Result<ServerScheduleBlockDto> = withContext(Dispatchers.IO) {
+        try {
+            val authToken = token() ?: return@withContext Result.failure(IllegalStateException("Not authenticated"))
+            val payload = json.encodeToString(ServerTaskUpdateDto(
+                title = title,
+                start_time = startTime,
+                duration_minutes = durationMinutes,
+                scheduled_date = scheduledDate,
+                is_completed = isCompleted
+            ))
+            val reqBody = payload.toRequestBody(jsonMediaType)
+            val request = Request.Builder()
+                .url("${baseUrl()}/api/v1/schedule/blocks/$blockId")
+                .header("Authorization", "Bearer $authToken")
+                .put(reqBody)
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: ""
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(IOException("HTTP ${response.code}: $bodyStr"))
+                }
+                val block = json.decodeFromString<ServerScheduleBlockDto>(bodyStr)
+                Result.success(block)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
     suspend fun deleteBlock(blockId: Long): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
             val authToken = token() ?: return@withContext Result.failure(IllegalStateException("Not authenticated"))

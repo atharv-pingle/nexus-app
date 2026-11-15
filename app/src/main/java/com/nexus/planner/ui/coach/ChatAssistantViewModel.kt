@@ -153,10 +153,38 @@ class ChatAssistantViewModel(
         _uiState.update { 
             it.copy(
                 isAutoPlanEnabled = next,
-                toastNotice = if (next) "⚡ Auto-Plan ON: Agent optimizing schedule" else "Auto-Plan OFF: Showing static tasks"
+                toastNotice = if (next) "Dynamic AI schedule active" else "Manual schedule active"
             ) 
         }
         loadData()
+    }
+
+    fun updateTask(
+        blockId: Long,
+        title: String,
+        startTime: String,
+        durationMinutes: Int,
+        isTomorrow: Boolean
+    ) {
+        viewModelScope.launch {
+            val targetDate = if (isTomorrow) {
+                java.time.LocalDate.now().plusDays(1).toString()
+            } else {
+                java.time.LocalDate.now().toString()
+            }
+            apiClient.updateBlock(
+                blockId = blockId,
+                title = title,
+                startTime = startTime,
+                durationMinutes = durationMinutes,
+                scheduledDate = targetDate
+            ).onSuccess {
+                _uiState.update { it.copy(toastNotice = "Updated '$title'") }
+                loadData()
+            }.onFailure { err ->
+                _uiState.update { it.copy(toastNotice = "Failed to update: ${err.message}") }
+            }
+        }
     }
 
     fun triggerAlarmForTask(task: ServerScheduleBlockDto) {
@@ -208,21 +236,23 @@ class ChatAssistantViewModel(
     }
 
     fun handleTaskVoiceInstruction(blockId: Long?, command: String) {
+        val active = _uiState.value.activeAlarmTask
         dismissAlarm()
         val lower = command.lowercase()
         viewModelScope.launch {
             if (lower.contains("delay") || lower.contains("postpone") || lower.contains("snooze")) {
                 snoozeAlarm(20)
-                _uiState.update { it.copy(toastNotice = "⏱️ Delayed task by 20m via voice instruction") }
-            } else if (lower.contains("tomorrow") && blockId != null) {
-                // Postpone to tomorrow
-                _uiState.update { it.copy(toastNotice = "🔄 Moved task to Tomorrow") }
-                loadData()
+                _uiState.update { it.copy(toastNotice = "Delayed task by 20m via voice") }
             } else if (blockId != null && (lower.contains("done") || lower.contains("complete") || lower.contains("finish"))) {
                 toggleTask(blockId)
-                _uiState.update { it.copy(toastNotice = "✓ Task marked complete via voice") }
+                _uiState.update { it.copy(toastNotice = "Task marked complete via voice") }
             } else {
-                sendMessage(command)
+                val contextualMessage = if (active != null) {
+                    "Regarding task '${active.title}' (ID: ${active.id}): $command"
+                } else {
+                    command
+                }
+                sendMessage(contextualMessage)
             }
         }
     }

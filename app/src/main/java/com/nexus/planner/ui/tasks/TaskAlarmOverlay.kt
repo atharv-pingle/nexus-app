@@ -57,44 +57,28 @@ fun TaskAlarmOverlay(
             verticalArrangement = Arrangement.SpaceBetween,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Top Status Bar
+            // Top Status Bar: Sleek & Executive
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(10.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFFEF4444))
-                    )
-                    Text(
-                        text = "NEXUS // TASK ALARM",
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFFFCA5A5)
-                    )
-                }
+                Text(
+                    text = "NEXUS // ALARM",
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp,
+                    color = Zinc400
+                )
 
-                Surface(
-                    color = Zinc900,
-                    shape = RoundedCornerShape(6.dp),
-                    border = BorderStroke(1.dp, Zinc800)
-                ) {
-                    Text(
-                        text = "PRIORITY ALERT",
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 10.sp,
-                        color = Zinc400,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
-                }
+                Text(
+                    text = task.start_time,
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
             }
 
             // Center Display: Pulsing Glow, Contextual Icon, Title & Dedicated Voice Mic
@@ -151,70 +135,23 @@ fun TaskAlarmOverlay(
                     lineHeight = 30.sp
                 )
 
-                // Dedicated Mic on Alarm Screen
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(top = 12.dp)
+                // Dedicated Context-Aware Mic
+                Box(
+                    modifier = Modifier
+                        .padding(top = 14.dp)
+                        .size(64.dp)
+                        .clip(CircleShape)
+                        .background(Zinc900)
+                        .border(1.dp, Emerald400, CircleShape)
+                        .clickable { onStartVoiceRecognition() },
+                    contentAlignment = Alignment.Center
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .size(68.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFFDC2626))
-                            .clickable { onStartVoiceRecognition() },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Mic,
-                            contentDescription = "Task Voice Instruction",
-                            tint = Color.White,
-                            modifier = Modifier.size(32.dp)
-                        )
-                    }
-
-                    Text(
-                        text = "🎙️ Tap to talk to this task",
-                        fontFamily = FontFamily.Monospace,
-                        fontSize = 12.sp,
-                        color = Zinc400
+                    Icon(
+                        imageVector = Icons.Default.Mic,
+                        contentDescription = "Voice Instruction",
+                        tint = Emerald400,
+                        modifier = Modifier.size(30.dp)
                     )
-
-                    // Quick Spoken Suggestions
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.padding(top = 4.dp)
-                    ) {
-                        Surface(
-                            color = Zinc900,
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, Zinc800),
-                            modifier = Modifier.clickable { onVoiceInstruction("Delay 20 mins") }
-                        ) {
-                            Text(
-                                text = "⏱️ Delay 20m",
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
-                                color = Zinc300,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                            )
-                        }
-
-                        Surface(
-                            color = Zinc900,
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, Zinc800),
-                            modifier = Modifier.clickable { onVoiceInstruction("Move to tomorrow") }
-                        ) {
-                            Text(
-                                text = "🔄 Move to tomorrow",
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
-                                color = Zinc300,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                            )
-                        }
-                    }
                 }
             }
 
