@@ -621,18 +621,6 @@ fun TaskListItem(
         }
     }
 }
-                            color = Zinc400
-                        )
-                        // Alarm Icon shown only if alarm is set
-                        Text(text = "⏰", fontSize = 11.sp)
-                    }
-                }
-            }
-
-            Text(text = "›", fontSize = 16.sp, color = Zinc600)
-        }
-    }
-}
 
 @Composable
 fun TaskDetailCustomizerSheet(
