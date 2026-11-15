@@ -59,7 +59,15 @@ jobs:
         run: |
           BUILD_TOOLS=$(find $ANDROID_HOME/build-tools -maxdepth 1 -mindepth 1 | sort -V | tail -n 1)
           echo "Using build tools: $BUILD_TOOLS"
+          echo "=== Ensuring 4-byte Zipalign & V1+V2+V3 APKSIGNER Signatures ==="
+          $BUILD_TOOLS/zipalign -c -v 4 release-dist/nexus-v1.0.0.${{ github.run_number }}.apk || {
+            $BUILD_TOOLS/zipalign -f -p 4 release-dist/nexus-v1.0.0.${{ github.run_number }}.apk /tmp/aligned.apk
+            mv /tmp/aligned.apk release-dist/nexus-v1.0.0.${{ github.run_number }}.apk
+          }
+          $BUILD_TOOLS/apksigner sign --ks nexus-release.jks --ks-pass pass:nexuspassword123 --ks-key-alias nexus --key-pass pass:nexuspassword123 --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true release-dist/nexus-v1.0.0.${{ github.run_number }}.apk
+          echo "=== APK Badging Verification ==="
           $BUILD_TOOLS/aapt dump badging release-dist/nexus-v1.0.0.${{ github.run_number }}.apk
+          echo "=== APKSIGNER Scheme Verification ==="
           $BUILD_TOOLS/apksigner verify --verbose --print-certs release-dist/nexus-v1.0.0.${{ github.run_number }}.apk
 
       - name: Report Build Error Log
