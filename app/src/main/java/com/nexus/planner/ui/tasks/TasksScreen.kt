@@ -36,13 +36,22 @@ fun TasksScreen(
     onQuickAddTask: (String, Boolean) -> Unit,
     onDeleteTask: (Long) -> Unit,
     onUpdateTask: (Long, String, String, Int, Boolean) -> Unit,
+    onCreateFullTask: ((String, String, Int, Boolean, String, String?, List<String>) -> Unit)? = null,
+    onToggleSubTask: ((Long, Int) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     var selectedTab by remember { mutableStateOf("today") }
     var editingTask by remember { mutableStateOf<ServerScheduleBlockDto?>(null) }
+    var showCreateSheet by remember { mutableStateOf(false) }
+    var selectedCategoryFilter by remember { mutableStateOf("ALL") }
     var quickInputText by remember { mutableStateOf("") }
 
-    val currentTasks = if (selectedTab == "today") todayTasks else tomorrowTasks
+    val rawTasks = if (selectedTab == "today") todayTasks else tomorrowTasks
+    val currentTasks = if (selectedCategoryFilter == "ALL") {
+        rawTasks
+    } else {
+        rawTasks.filter { it.block_type.equals(selectedCategoryFilter, ignoreCase = true) }
+    }
     val isTomorrow = selectedTab == "tomorrow"
 
     Box(
@@ -159,6 +168,41 @@ fun TasksScreen(
                 }
             }
 
+            // Category Filter Chips Row (Grit feature)
+            val categoryChips = listOf("ALL", "FOCUS", "DEEP WORK", "SIDE PROJECT", "WORKOUT", "ADMIN")
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                categoryChips.take(5).forEach { cat ->
+                    val isSelected = selectedCategoryFilter == cat
+                    Surface(
+                        color = if (isSelected) Color.White else Zinc950,
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, if (isSelected) Color.White else Zinc800),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { selectedCategoryFilter = cat }
+                    ) {
+                        Box(
+                            modifier = Modifier.padding(vertical = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = cat,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 8.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isSelected) Color.Black else Zinc400,
+                                maxLines = 1
+                            )
+                        }
+                    }
+                }
+            }
+
             // Animated Processing Pop-up Banner (Auto-Plan / Rebalance in progress)
             AnimatedVisibility(
                 visible = isLoading,
@@ -237,6 +281,22 @@ fun TasksScreen(
                             modifier = Modifier.padding(horizontal = 14.dp, vertical = 14.dp)
                         )
                     }
+                } else {
+                    Surface(
+                        color = Zinc900,
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Zinc800),
+                        modifier = Modifier.clickable { showCreateSheet = true }
+                    ) {
+                        Text(
+                            text = "⚙ DETAILS",
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Zinc300,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 14.dp)
+                        )
+                    }
                 }
             }
 
@@ -296,22 +356,41 @@ fun TasksScreen(
             }
         }
 
-        // Task Detail Sheet (Customizer for Title, Time, Alarm, Delete, Save)
+        // Create Task Sheet (Full Details, Alarms & Subtasks)
+        if (showCreateSheet) {
+            TaskUpsertSheet(
+                initialIsTomorrow = isTomorrow,
+                onDismissRequest = { showCreateSheet = false },
+                onSaveTask = { title, startTime, duration, isTomorrowTarget, category, reminderTime, subtasks ->
+                    showCreateSheet = false
+                    if (onCreateFullTask != null) {
+                        onCreateFullTask(title, startTime, duration, isTomorrowTarget, category, reminderTime, subtasks)
+                    } else {
+                        onQuickAddTask(title, isTomorrowTarget)
+                    }
+                }
+            )
+        }
+
+        // Edit Task Sheet
         editingTask?.let { task ->
-            TaskDetailCustomizerSheet(
+            TaskUpsertSheet(
                 task = task,
-                onDismiss = { editingTask = null },
+                initialIsTomorrow = isTomorrow,
+                onDismissRequest = { editingTask = null },
                 onTriggerAlarm = {
                     editingTask = null
                     onTriggerAlarm(task)
                 },
-                onDelete = {
+                onDeleteTask = { id ->
                     editingTask = null
-                    task.id?.let { onDeleteTask(it) }
+                    onDeleteTask(id)
                 },
-                onSave = { id, title, startTime, duration, isTomorrowTarget ->
+                onSaveTask = { title, startTime, duration, isTomorrowTarget, category, reminderTime, subtasks ->
                     editingTask = null
-                    onUpdateTask(id, title, startTime, duration, isTomorrowTarget)
+                    task.id?.let { id ->
+                        onUpdateTask(id, title, startTime, duration, isTomorrowTarget)
+                    }
                 }
             )
         }
@@ -341,8 +420,10 @@ fun TaskListItem(
     task: ServerScheduleBlockDto,
     isAutoPlanEnabled: Boolean,
     onToggleDone: () -> Unit,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onToggleSubTask: ((Int) -> Unit)? = null
 ) {
+    var isSubtasksExpanded by remember { mutableStateOf(false) }
     val bType = task.block_type.uppercase()
     val isGym = task.title.contains("gym", ignoreCase = true) || bType.contains("WORKOUT")
     val isWork = task.title.contains("laptop", ignoreCase = true) || task.title.contains("pr", ignoreCase = true) || bType.contains("FOCUS") || bType.contains("SAAS")
@@ -370,84 +451,176 @@ fun TaskListItem(
             .fillMaxWidth()
             .clickable { onClick() }
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.weight(1f)
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                // Colored Edge Bar
-                Box(
-                    modifier = Modifier
-                        .width(3.dp)
-                        .height(38.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(edgeColor)
-                )
-
-                // Checkbox Circle
-                Box(
-                    modifier = Modifier
-                        .size(22.dp)
-                        .clip(CircleShape)
-                        .border(1.dp, if (task.is_completed) Emerald400 else Zinc700, CircleShape)
-                        .background(if (task.is_completed) Emerald400.copy(alpha = 0.2f) else Color.Transparent)
-                        .clickable { onToggleDone() },
-                    contentAlignment = Alignment.Center
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
-                    if (task.is_completed) {
-                        Text(text = "✓", color = Emerald400, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
+                    // Colored Edge Bar
+                    Box(
+                        modifier = Modifier
+                            .width(3.dp)
+                            .height(38.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(edgeColor)
+                    )
 
-                // Title and Time Row
-                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    // Checkbox Circle
+                    Box(
+                        modifier = Modifier
+                            .size(22.dp)
+                            .clip(CircleShape)
+                            .border(1.dp, if (task.is_completed) Emerald400 else Zinc700, CircleShape)
+                            .background(if (task.is_completed) Emerald400.copy(alpha = 0.2f) else Color.Transparent)
+                            .clickable { onToggleDone() },
+                        contentAlignment = Alignment.Center
                     ) {
-                        Text(text = contextualIcon, fontSize = 14.sp)
-                        Text(
-                            text = task.title,
-                            fontSize = 14.sp,
-                            fontWeight = if (task.is_completed) FontWeight.Normal else FontWeight.Medium,
-                            color = if (task.is_completed) Zinc500 else Color.White,
-                            textDecoration = if (task.is_completed) TextDecoration.LineThrough else TextDecoration.None
-                        )
-                        val isAiManaged = task.status == "AI_SCHEDULED" || task.status == "CARRIED_OVER"
-                        if (isAiManaged && !task.is_completed) {
-                            Text(text = "✨", fontSize = 11.sp)
+                        if (task.is_completed) {
+                            Text(text = "✓", color = Emerald400, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
-                        if (isCarriedOver) {
+                    }
+
+                    // Title and Time Row
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Text(text = contextualIcon, fontSize = 14.sp)
+                            Text(
+                                text = task.title,
+                                fontSize = 14.sp,
+                                fontWeight = if (task.is_completed) FontWeight.Normal else FontWeight.Medium,
+                                color = if (task.is_completed) Zinc500 else Color.White,
+                                textDecoration = if (task.is_completed) TextDecoration.LineThrough else TextDecoration.None
+                            )
+                            val isAiManaged = task.status == "AI_SCHEDULED" || task.status == "CARRIED_OVER"
+                            if (isAiManaged && !task.is_completed) {
+                                Text(text = "✨", fontSize = 11.sp)
+                            }
+                            if (isCarriedOver) {
+                                Surface(
+                                    color = Color(0xFF451A03),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = "🔄 Carried over",
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 9.sp,
+                                        color = Color(0xFFFCD34D),
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "${task.start_time} – ${task.end_time}",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                color = Zinc400
+                            )
+
+                            // Category Tag
                             Surface(
-                                color = Color(0xFF451A03),
+                                color = Zinc900,
                                 shape = RoundedCornerShape(4.dp)
                             ) {
                                 Text(
-                                    text = "🔄 Carried over",
+                                    text = task.block_type,
                                     fontFamily = FontFamily.Monospace,
-                                    fontSize = 9.sp,
-                                    color = Color(0xFFFCD34D),
-                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                    fontSize = 8.5.sp,
+                                    color = Zinc400,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
                                 )
+                            }
+
+                            if (task.reminder_time != null) {
+                                Text(
+                                    text = "🔔 ${task.reminder_time}",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 10.sp,
+                                    color = Emerald400
+                                )
+                            }
+
+                            if (task.subtasks.isNotEmpty()) {
+                                val completedCount = task.subtasks.count { it.is_completed }
+                                Surface(
+                                    color = Color(0xFF1E293B),
+                                    shape = RoundedCornerShape(4.dp),
+                                    modifier = Modifier.clickable { isSubtasksExpanded = !isSubtasksExpanded }
+                                ) {
+                                    Text(
+                                        text = "▾ $completedCount/${task.subtasks.size} subtasks",
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 8.5.sp,
+                                        color = Color(0xFF93C5FD),
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                    )
+                                }
                             }
                         }
                     }
+                }
 
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "${task.start_time} – ${task.end_time}",
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 11.sp,
+                Text(text = "›", fontSize = 16.sp, color = Zinc600)
+            }
+
+            // Expandable Subtasks Accordion (Grit feature)
+            if (task.subtasks.isNotEmpty() && isSubtasksExpanded) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 38.dp, top = 4.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    task.subtasks.forEachIndexed { sIdx, sub ->
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.clickable { onToggleSubTask?.invoke(sIdx) }
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(15.dp)
+                                    .clip(RoundedCornerShape(3.dp))
+                                    .border(1.dp, if (sub.is_completed) Emerald400 else Zinc600, RoundedCornerShape(3.dp))
+                                    .background(if (sub.is_completed) Emerald400 else Color.Transparent),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (sub.is_completed) {
+                                    Text(text = "✓", color = Color.Black, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                            Text(
+                                text = sub.title,
+                                fontSize = 12.sp,
+                                color = if (sub.is_completed) Zinc500 else Zinc300,
+                                textDecoration = if (sub.is_completed) TextDecoration.LineThrough else TextDecoration.None
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
                             color = Zinc400
                         )
                         // Alarm Icon shown only if alarm is set

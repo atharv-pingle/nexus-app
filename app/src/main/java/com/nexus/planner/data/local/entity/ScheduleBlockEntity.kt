@@ -18,5 +18,7 @@ data class ScheduleBlockEntity(
     val durationMinutes: Int,       // e.g. 75
     val microAction: String,        // 2-minute starter step
     val status: String = "SCHEDULED", // SCHEDULED, ACTIVE, COMPLETED, SKIPPED, DELAYED
+    val reminderTime: String? = null, // e.g. "09:30" or ISO
+    val subtasksJson: String = "[]", // Serialized subtasks list
     val sortOrder: Int = 0
 )

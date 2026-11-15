@@ -340,6 +340,78 @@ fun StatsScreen(
                     }
                 }
             }
+
+            // Consistency Heatmap (Grit style, adapted to Nexus minimal design)
+            item {
+                Surface(
+                    color = Zinc950,
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, Zinc800),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                Text("🟩", fontSize = 12.sp)
+                                Text(
+                                    text = "CONSISTENCY HEATMAP",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White
+                                )
+                            }
+                            Text(
+                                text = "89% DISCIPLINE",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Emerald400
+                            )
+                        }
+
+                        // Grid of squares
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            for (row in 0 until 5) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    for (col in 0 until 14) {
+                                        val intensity = (row * 14 + col) % 5
+                                        val cellColor = when (intensity) {
+                                            4 -> Emerald400
+                                            3 -> Emerald400.copy(alpha = 0.65f)
+                                            2 -> Emerald400.copy(alpha = 0.35f)
+                                            1 -> Emerald400.copy(alpha = 0.15f)
+                                            else -> Zinc900
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .aspectRatio(1f)
+                                                .clip(RoundedCornerShape(2.dp))
+                                                .background(cellColor)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

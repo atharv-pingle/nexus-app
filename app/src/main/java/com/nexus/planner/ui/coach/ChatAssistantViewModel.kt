@@ -4,7 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nexus.planner.data.remote.NexusApiClient
 import com.nexus.planner.data.remote.ServerChatMessageDto
+import com.nexus.planner.data.remote.ServerHabitDto
 import com.nexus.planner.data.remote.ServerScheduleBlockDto
+import com.nexus.planner.data.remote.ServerSubTaskDto
+import com.nexus.planner.service.NexusAlarmScheduler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,6 +18,7 @@ data class ChatAssistantUiState(
     val messages: List<ServerChatMessageDto> = emptyList(),
     val todaySchedule: List<ServerScheduleBlockDto> = emptyList(),
     val tomorrowSchedule: List<ServerScheduleBlockDto> = emptyList(),
+    val habits: List<ServerHabitDto> = emptyList(),
     val isAutoPlanEnabled: Boolean = true,
     val activeAlarmTask: ServerScheduleBlockDto? = null,
     val showScheduleInChat: Boolean = false,
@@ -58,7 +62,12 @@ class ChatAssistantViewModel(
                 _uiState.update { it.copy(messages = cleaned) }
             }
 
-            // 4. Proactive Check
+            // 4. Fetch Habits
+            apiClient.fetchHabits().onSuccess { habitList ->
+                _uiState.update { it.copy(habits = habitList) }
+            }
+
+            // 5. Proactive Check
             checkProactiveNudge()
 
             _uiState.update { it.copy(isLoading = false) }
@@ -303,7 +312,7 @@ class ChatAssistantViewModel(
         }
     }
 
-    fun deleteTask(blockId: Long) {
+    fun deleteTask(blockId: Long, context: android.content.Context? = null) {
         viewModelScope.launch {
             _uiState.update { 
                 it.copy(
@@ -312,7 +321,183 @@ class ChatAssistantViewModel(
                     toastNotice = "Task deleted"
                 )
             }
+            if (context != null) {
+                NexusAlarmScheduler.cancelTaskAlarm(context, blockId)
+            }
             apiClient.deleteBlock(blockId)
+        }
+    }
+
+    fun createFullTask(
+        title: String,
+        startTime: String = "10:00",
+        durationMinutes: Int = 45,
+        isTomorrow: Boolean = false,
+        category: String = "FOCUS",
+        reminderTime: String? = null,
+        subtasks: List<String> = emptyList(),
+        context: android.content.Context? = null
+    ) {
+        if (title.isBlank()) return
+        viewModelScope.launch {
+            apiClient.createQuickTask(
+                title = title,
+                startTime = startTime,
+                isTomorrow = isTomorrow,
+                category = category,
+                durationMinutes = durationMinutes,
+                reminderTime = reminderTime,
+                subtasks = subtasks
+            ).onSuccess { newBlock ->
+                val subtaskDtos = subtasks.mapIndexed { idx, s ->
+                    ServerSubTaskDto(id = (idx + 1).toLong(), title = s, is_completed = false)
+                }
+                val enrichedBlock = newBlock.copy(
+                    reminder_time = reminderTime,
+                    subtasks = if (newBlock.subtasks.isNotEmpty()) newBlock.subtasks else subtaskDtos
+                )
+                val targetDate = if (isTomorrow) {
+                    java.time.LocalDate.now().plusDays(1).toString()
+                } else {
+                    java.time.LocalDate.now().toString()
+                }
+
+                if (isTomorrow) {
+                    _uiState.update { it.copy(tomorrowSchedule = listOf(enrichedBlock) + it.tomorrowSchedule) }
+                } else {
+                    _uiState.update { it.copy(todaySchedule = listOf(enrichedBlock) + it.todaySchedule) }
+                }
+
+                if (reminderTime != null && context != null && newBlock.id != null) {
+                    NexusAlarmScheduler.scheduleTaskAlarm(
+                        context = context,
+                        taskId = newBlock.id,
+                        title = title,
+                        scheduledDate = targetDate,
+                        reminderTime = reminderTime
+                    )
+                }
+
+                _uiState.update { it.copy(toastNotice = "Created task '$title' (${subtasks.size} subtasks)") }
+            }
+        }
+    }
+
+    fun toggleSubTask(blockId: Long, subtaskIndex: Int) {
+        val todayMatches = _uiState.value.todaySchedule.any { it.id == blockId }
+        val tomorrowMatches = _uiState.value.tomorrowSchedule.any { it.id == blockId }
+
+        if (todayMatches) {
+            val updated = _uiState.value.todaySchedule.map { block ->
+                if (block.id == blockId) {
+                    val updatedSubtasks = block.subtasks.mapIndexed { idx, sub ->
+                        if (idx == subtaskIndex) sub.copy(is_completed = !sub.is_completed) else sub
+                    }
+                    block.copy(subtasks = updatedSubtasks)
+                } else block
+            }
+            _uiState.update { it.copy(todaySchedule = updated) }
+        } else if (tomorrowMatches) {
+            val updated = _uiState.value.tomorrowSchedule.map { block ->
+                if (block.id == blockId) {
+                    val updatedSubtasks = block.subtasks.mapIndexed { idx, sub ->
+                        if (idx == subtaskIndex) sub.copy(is_completed = !sub.is_completed) else sub
+                    }
+                    block.copy(subtasks = updatedSubtasks)
+                } else block
+            }
+            _uiState.update { it.copy(tomorrowSchedule = updated) }
+        }
+    }
+
+    fun createHabit(
+        title: String,
+        category: String,
+        habitType: String,
+        targetValue: Double,
+        targetUnit: String,
+        activeDays: String,
+        reminderTime: String?,
+        context: android.content.Context? = null
+    ) {
+        viewModelScope.launch {
+            apiClient.createHabit(
+                title = title,
+                category = category,
+                habitType = habitType,
+                targetValue = targetValue,
+                targetUnit = targetUnit,
+                activeDays = activeDays,
+                reminderTime = reminderTime
+            ).onSuccess { newHabit ->
+                _uiState.update { it.copy(habits = it.habits + newHabit, toastNotice = "Habit '$title' active! 🔥") }
+                if (reminderTime != null && context != null && newHabit.id != null) {
+                    NexusAlarmScheduler.scheduleHabitAlarm(
+                        context = context,
+                        habitId = newHabit.id,
+                        title = title,
+                        timeStr = reminderTime,
+                        activeDaysStr = activeDays
+                    )
+                }
+            }.onFailure {
+                val fallback = ServerHabitDto(
+                    id = System.currentTimeMillis(),
+                    title = title,
+                    category = category,
+                    habit_type = habitType,
+                    target_value = targetValue,
+                    target_unit = targetUnit,
+                    active_days = activeDays,
+                    reminder_time = reminderTime,
+                    streak = 1,
+                    is_completed_today = false
+                )
+                _uiState.update { it.copy(habits = it.habits + fallback, toastNotice = "Habit '$title' created! 🔥") }
+            }
+        }
+    }
+
+    fun deleteHabit(habitId: Long, context: android.content.Context? = null) {
+        viewModelScope.launch {
+            _uiState.update { it.copy(habits = it.habits.filter { h -> h.id != habitId }, toastNotice = "Habit removed") }
+            if (context != null) {
+                NexusAlarmScheduler.cancelHabitAlarm(context, habitId)
+            }
+            apiClient.deleteHabit(habitId)
+        }
+    }
+
+    fun toggleHabit(habitId: Long) {
+        viewModelScope.launch {
+            val updated = _uiState.value.habits.map { h ->
+                if (h.id == habitId) {
+                    val nextDone = !h.is_completed_today
+                    val nextStreak = if (nextDone) h.streak + 1 else maxOf(0, h.streak - 1)
+                    h.copy(is_completed_today = nextDone, streak = nextStreak)
+                } else h
+            }
+            _uiState.update { it.copy(habits = updated) }
+            apiClient.toggleHabit(habitId)
+        }
+    }
+
+    fun logHabitProgress(habitId: Long, value: Double) {
+        viewModelScope.launch {
+            val updated = _uiState.value.habits.map { h ->
+                if (h.id == habitId) {
+                    val nextVal = h.today_logged_value + value
+                    val isDone = nextVal >= h.target_value && h.target_value > 0
+                    val nextStreak = if (isDone && !h.is_completed_today) h.streak + 1 else h.streak
+                    h.copy(
+                        today_logged_value = nextVal,
+                        is_completed_today = isDone || h.is_completed_today,
+                        streak = nextStreak
+                    )
+                } else h
+            }
+            _uiState.update { it.copy(habits = updated, toastNotice = "+${value.toInt()} logged! Keep going 💪") }
+            apiClient.logHabitProgress(habitId, value)
         }
     }
 

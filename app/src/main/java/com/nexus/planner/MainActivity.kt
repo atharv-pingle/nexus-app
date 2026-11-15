@@ -32,6 +32,7 @@ import com.nexus.planner.ui.coach.ChatAssistantScreen
 import com.nexus.planner.ui.coach.ChatAssistantViewModel
 import com.nexus.planner.ui.tasks.TasksScreen
 import com.nexus.planner.ui.tasks.TaskAlarmOverlay
+import com.nexus.planner.ui.habits.HabitsScreen
 import com.nexus.planner.ui.stats.StatsScreen
 import com.nexus.planner.ui.theme.*
 import kotlinx.coroutines.delay
@@ -90,10 +91,10 @@ class MainActivity : ComponentActivity() {
                         }
                     )
                 } else {
-                    val pagerState = rememberPagerState(pageCount = { 3 })
+                    val pagerState = rememberPagerState(pageCount = { 4 })
                     val coroutineScope = rememberCoroutineScope()
                     val chatState by chatViewModel.uiState.collectAsState()
-                    val pivotTitles = listOf("chat", "tasks", "stats")
+                    val pivotTitles = listOf("chat", "tasks", "habits", "stats")
 
                     Box(modifier = Modifier.fillMaxSize()) {
                         Scaffold(
@@ -238,12 +239,46 @@ class MainActivity : ComponentActivity() {
                                         onToggleAutoPlan = { chatViewModel.toggleAutoPlan() },
                                         onTriggerAlarm = { task -> chatViewModel.triggerAlarmForTask(task) },
                                         onQuickAddTask = { title, isTomorrow -> chatViewModel.createQuickTask(title, isTomorrow = isTomorrow) },
-                                        onDeleteTask = { blockId -> chatViewModel.deleteTask(blockId) },
+                                        onDeleteTask = { blockId -> chatViewModel.deleteTask(blockId, context = this@MainActivity) },
                                         onUpdateTask = { blockId, title, startTime, duration, isTomorrow ->
                                             chatViewModel.updateTask(blockId, title, startTime, duration, isTomorrow)
+                                        },
+                                        onCreateFullTask = { title, startTime, duration, isTomorrow, category, reminderTime, subtasks ->
+                                            chatViewModel.createFullTask(
+                                                title = title,
+                                                startTime = startTime,
+                                                durationMinutes = duration,
+                                                isTomorrow = isTomorrow,
+                                                category = category,
+                                                reminderTime = reminderTime,
+                                                subtasks = subtasks,
+                                                context = this@MainActivity
+                                            )
+                                        },
+                                        onToggleSubTask = { blockId, sIdx ->
+                                            chatViewModel.toggleSubTask(blockId, sIdx)
                                         }
                                     )
-                                    2 -> StatsScreen(
+                                    2 -> HabitsScreen(
+                                        habits = chatState.habits,
+                                        isLoading = chatState.isLoading,
+                                        onToggleHabit = { habitId -> chatViewModel.toggleHabit(habitId) },
+                                        onLogMeasurableProgress = { habitId, amt -> chatViewModel.logHabitProgress(habitId, amt) },
+                                        onCreateHabit = { title, category, habitType, targetValue, targetUnit, activeDays, reminderTime ->
+                                            chatViewModel.createHabit(
+                                                title = title,
+                                                category = category,
+                                                habitType = habitType,
+                                                targetValue = targetValue,
+                                                targetUnit = targetUnit,
+                                                activeDays = activeDays,
+                                                reminderTime = reminderTime,
+                                                context = this@MainActivity
+                                            )
+                                        },
+                                        onDeleteHabit = { habitId -> chatViewModel.deleteHabit(habitId, context = this@MainActivity) }
+                                    )
+                                    3 -> StatsScreen(
                                         pushupsCount = chatState.pushupsCount,
                                         workoutStreak = chatState.workoutStreak
                                     )

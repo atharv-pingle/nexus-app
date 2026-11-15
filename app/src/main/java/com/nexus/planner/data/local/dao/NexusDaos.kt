@@ -3,7 +3,9 @@ package com.nexus.planner.data.local.dao
 import androidx.room.*
 import com.nexus.planner.data.local.entity.FrictionLogEntity
 import com.nexus.planner.data.local.entity.HabitEntity
+import com.nexus.planner.data.local.entity.HabitLogEntity
 import com.nexus.planner.data.local.entity.ScheduleBlockEntity
+import com.nexus.planner.data.local.entity.SubTaskEntity
 import com.nexus.planner.data.local.entity.UserCognitiveProfileEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -33,14 +35,59 @@ interface HabitDao {
     @Query("SELECT * FROM habits")
     fun getAllHabits(): Flow<List<HabitEntity>>
 
+    @Query("SELECT * FROM habits WHERE id = :id LIMIT 1")
+    suspend fun getHabitById(id: Long): HabitEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertHabit(habit: HabitEntity)
+    suspend fun insertHabit(habit: HabitEntity): Long
 
     @Update
     suspend fun updateHabit(habit: HabitEntity)
 
+    @Query("DELETE FROM habits WHERE id = :id")
+    suspend fun deleteHabit(id: Long)
+
     @Query("DELETE FROM habits")
     suspend fun clearAll()
+}
+
+@Dao
+interface SubTaskDao {
+    @Query("SELECT * FROM subtasks WHERE parentBlockId = :parentBlockId ORDER BY sortOrder ASC, id ASC")
+    fun getSubTasksForBlock(parentBlockId: Long): Flow<List<SubTaskEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSubTask(subTask: SubTaskEntity): Long
+
+    @Update
+    suspend fun updateSubTask(subTask: SubTaskEntity)
+
+    @Query("DELETE FROM subtasks WHERE id = :id")
+    suspend fun deleteSubTask(id: Long)
+
+    @Query("DELETE FROM subtasks WHERE parentBlockId = :parentBlockId")
+    suspend fun deleteSubTasksForBlock(parentBlockId: Long)
+}
+
+@Dao
+interface HabitLogDao {
+    @Query("SELECT * FROM habit_logs WHERE habitId = :habitId ORDER BY dateIso DESC")
+    fun getLogsForHabit(habitId: Long): Flow<List<HabitLogEntity>>
+
+    @Query("SELECT * FROM habit_logs WHERE dateIso >= :startDateIso ORDER BY dateIso ASC")
+    fun getLogsSince(startDateIso: String): Flow<List<HabitLogEntity>>
+
+    @Query("SELECT * FROM habit_logs WHERE habitId = :habitId AND dateIso = :dateIso LIMIT 1")
+    suspend fun getLogForDate(habitId: Long, dateIso: String): HabitLogEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertLog(log: HabitLogEntity)
+
+    @Query("DELETE FROM habit_logs WHERE habitId = :habitId AND dateIso = :dateIso")
+    suspend fun deleteLog(habitId: Long, dateIso: String)
+
+    @Query("DELETE FROM habit_logs WHERE habitId = :habitId")
+    suspend fun clearLogsForHabit(habitId: Long)
 }
 
 @Dao

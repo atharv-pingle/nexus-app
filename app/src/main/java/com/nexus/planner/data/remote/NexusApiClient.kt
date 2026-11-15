@@ -102,13 +102,21 @@ class NexusApiClient(
         }
     }
 
-    suspend fun createQuickTask(title: String, startTime: String, isTomorrow: Boolean): Result<ServerScheduleBlockDto> = withContext(Dispatchers.IO) {
+    suspend fun createQuickTask(
+        title: String,
+        startTime: String = "10:00",
+        isTomorrow: Boolean = false,
+        category: String? = null,
+        durationMinutes: Int = 45,
+        reminderTime: String? = null,
+        subtasks: List<String> = emptyList()
+    ): Result<ServerScheduleBlockDto> = withContext(Dispatchers.IO) {
         try {
             val authToken = token() ?: return@withContext Result.failure(IllegalStateException("Not authenticated"))
             val tomorrowStr = java.time.LocalDate.now().plusDays(1).toString()
             val todayStr = java.time.LocalDate.now().toString()
             val targetDate = if (isTomorrow) tomorrowStr else todayStr
-            val blockType = when {
+            val blockType = category ?: when {
                 title.contains("gym", ignoreCase = true) || title.contains("workout", ignoreCase = true) -> "WORKOUT"
                 title.contains("nap", ignoreCase = true) || title.contains("rest", ignoreCase = true) -> "TRANSITION"
                 title.contains("sleep", ignoreCase = true) -> "SLEEP"
@@ -117,9 +125,11 @@ class NexusApiClient(
             val payload = json.encodeToString(ServerQuickTaskCreateDto(
                 title = title,
                 start_time = startTime,
-                duration_minutes = 45,
+                duration_minutes = durationMinutes,
                 scheduled_date = targetDate,
-                block_type = blockType
+                block_type = blockType,
+                reminder_time = reminderTime,
+                subtasks = subtasks
             ))
             val reqBody = payload.toRequestBody(jsonMediaType)
             val request = Request.Builder()
@@ -147,7 +157,10 @@ class NexusApiClient(
         startTime: String? = null,
         durationMinutes: Int? = null,
         scheduledDate: String? = null,
-        isCompleted: Boolean? = null
+        isCompleted: Boolean? = null,
+        category: String? = null,
+        reminderTime: String? = null,
+        subtasks: List<ServerSubTaskDto>? = null
     ): Result<ServerScheduleBlockDto> = withContext(Dispatchers.IO) {
         try {
             val authToken = token() ?: return@withContext Result.failure(IllegalStateException("Not authenticated"))
@@ -156,7 +169,10 @@ class NexusApiClient(
                 start_time = startTime,
                 duration_minutes = durationMinutes,
                 scheduled_date = scheduledDate,
-                is_completed = isCompleted
+                block_type = category,
+                is_completed = isCompleted,
+                reminder_time = reminderTime,
+                subtasks = subtasks
             ))
             val reqBody = payload.toRequestBody(jsonMediaType)
             val request = Request.Builder()
@@ -264,6 +280,86 @@ class NexusApiClient(
                 .url(url)
                 .header("Authorization", "Bearer $authToken")
                 .post(emptyBody)
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                Result.success(response.isSuccessful)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun createHabit(
+        title: String,
+        category: String = "FOCUS",
+        habitType: String = "YES_NO",
+        targetValue: Double = 0.0,
+        targetUnit: String = "",
+        activeDays: String = "MON,TUE,WED,THU,FRI,SAT,SUN",
+        reminderTime: String? = null
+    ): Result<ServerHabitDto> = withContext(Dispatchers.IO) {
+        try {
+            val authToken = token() ?: return@withContext Result.failure(IllegalStateException("Not authenticated"))
+            val payload = json.encodeToString(ServerHabitCreateDto(
+                title = title,
+                category = category,
+                habit_type = habitType,
+                target_value = targetValue,
+                target_unit = targetUnit,
+                active_days = activeDays,
+                reminder_time = reminderTime
+            ))
+            val reqBody = payload.toRequestBody(jsonMediaType)
+            val request = Request.Builder()
+                .url("${baseUrl()}/api/v1/habits")
+                .header("Authorization", "Bearer $authToken")
+                .post(reqBody)
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                val bodyStr = response.body?.string() ?: ""
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(IOException("HTTP ${response.code}: $bodyStr"))
+                }
+                val created = json.decodeFromString<ServerHabitDto>(bodyStr)
+                Result.success(created)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteHabit(habitId: Long): Result<Boolean> = withContext(Dispatchers.IO) {
+        try {
+            val authToken = token() ?: return@withContext Result.failure(IllegalStateException("Not authenticated"))
+            val request = Request.Builder()
+                .url("${baseUrl()}/api/v1/habits/$habitId")
+                .header("Authorization", "Bearer $authToken")
+                .delete()
+                .build()
+
+            client.newCall(request).execute().use { response ->
+                Result.success(response.isSuccessful)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun logHabitProgress(habitId: Long, value: Double, dateStr: String? = null): Result<Boolean> = withContext(Dispatchers.IO) {
+        try {
+            val authToken = token() ?: return@withContext Result.failure(IllegalStateException("Not authenticated"))
+            val payload = json.encodeToString(ServerHabitLogDto(
+                habit_id = habitId,
+                value = value,
+                date = dateStr ?: java.time.LocalDate.now().toString()
+            ))
+            val reqBody = payload.toRequestBody(jsonMediaType)
+            val request = Request.Builder()
+                .url("${baseUrl()}/api/v1/habits/$habitId/log")
+                .header("Authorization", "Bearer $authToken")
+                .post(reqBody)
                 .build()
 
             client.newCall(request).execute().use { response ->

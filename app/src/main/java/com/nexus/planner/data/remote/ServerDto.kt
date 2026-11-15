@@ -18,6 +18,13 @@ data class ServerTokenResponseDto(
 )
 
 @Serializable
+data class ServerSubTaskDto(
+    val id: Long? = null,
+    val title: String,
+    val is_completed: Boolean = false
+)
+
+@Serializable
 data class ServerScheduleBlockDto(
     val id: Long? = null,
     val title: String,
@@ -28,18 +35,28 @@ data class ServerScheduleBlockDto(
     val is_completed: Boolean = false,
     val status: String = "UPCOMING",
     val delay_count: Int = 0,
-    val scheduled_date: String? = null
+    val scheduled_date: String? = null,
+    val reminder_time: String? = null,
+    val subtasks: List<ServerSubTaskDto> = emptyList()
 )
 
 @Serializable
 data class ServerHabitDto(
     val id: Long? = null,
     val title: String,
-    val category: String = "STRENGTH",
+    val category: String = "FOCUS",
+    val habit_type: String = "YES_NO", // YES_NO or MEASURABLE
+    val target_value: Double = 0.0,
+    val target_unit: String = "",
+    val active_days: String = "MON,TUE,WED,THU,FRI,SAT,SUN",
+    val reminder_time: String? = null,
+    val today_logged_value: Double = 0.0,
+    val is_completed_today: Boolean = false,
     val target_days: Int = 66,
     val current_day: Int = 1,
     val streak: Int = 0,
-    val last_completed_date: String? = null
+    val last_completed_date: String? = null,
+    val week_history: List<Boolean> = emptyList() // Mon-Sun completion for current week
 )
 
 @Serializable
@@ -106,7 +123,9 @@ data class ServerQuickTaskCreateDto(
     val start_time: String = "10:00",
     val duration_minutes: Int = 45,
     val scheduled_date: String? = null,
-    val block_type: String = "FOCUS"
+    val block_type: String = "FOCUS",
+    val reminder_time: String? = null,
+    val subtasks: List<String> = emptyList()
 )
 
 @Serializable
@@ -116,5 +135,25 @@ data class ServerTaskUpdateDto(
     val duration_minutes: Int? = null,
     val scheduled_date: String? = null,
     val block_type: String? = null,
-    val is_completed: Boolean? = null
+    val is_completed: Boolean? = null,
+    val reminder_time: String? = null,
+    val subtasks: List<ServerSubTaskDto>? = null
+)
+
+@Serializable
+data class ServerHabitCreateDto(
+    val title: String,
+    val category: String = "FOCUS",
+    val habit_type: String = "YES_NO",
+    val target_value: Double = 0.0,
+    val target_unit: String = "",
+    val active_days: String = "MON,TUE,WED,THU,FRI,SAT,SUN",
+    val reminder_time: String? = null
+)
+
+@Serializable
+data class ServerHabitLogDto(
+    val habit_id: Long,
+    val value: Double = 1.0,
+    val date: String? = null
 )
