@@ -14,6 +14,18 @@ interface ScheduleDao {
     @Query("SELECT * FROM schedule_blocks WHERE dateIso = :dateIso ORDER BY sortOrder ASC, startTime ASC")
     fun getScheduleForDate(dateIso: String): Flow<List<ScheduleBlockEntity>>
 
+    @Query("SELECT * FROM schedule_blocks WHERE horizon = :horizon ORDER BY sortOrder ASC, startTime ASC")
+    fun getScheduleForHorizon(horizon: String): Flow<List<ScheduleBlockEntity>>
+
+    @Query("SELECT * FROM schedule_blocks WHERE id = :id LIMIT 1")
+    suspend fun getBlockById(id: Long): ScheduleBlockEntity?
+
+    @Query("DELETE FROM schedule_blocks WHERE id = :id")
+    suspend fun deleteBlockById(id: Long)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertBlock(block: ScheduleBlockEntity): Long
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBlocks(blocks: List<ScheduleBlockEntity>)
 

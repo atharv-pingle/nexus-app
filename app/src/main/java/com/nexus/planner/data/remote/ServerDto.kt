@@ -37,7 +37,13 @@ data class ServerScheduleBlockDto(
     val delay_count: Int = 0,
     val scheduled_date: String? = null,
     val reminder_time: String? = null,
-    val subtasks: List<ServerSubTaskDto> = emptyList()
+    val subtasks: List<ServerSubTaskDto> = emptyList(),
+    val horizon: String = "TODAY",
+    val waiting_on: String? = null,
+    val waiting_since: String? = null,
+    val is_sequential: Boolean = false,
+    val active_subtask_index: Int = 0,
+    val priority: String = "NONE"
 )
 
 @Serializable
@@ -125,7 +131,11 @@ data class ServerQuickTaskCreateDto(
     val scheduled_date: String? = null,
     val block_type: String = "FOCUS",
     val reminder_time: String? = null,
-    val subtasks: List<String> = emptyList()
+    val subtasks: List<String> = emptyList(),
+    val horizon: String = "TODAY",
+    val waiting_on: String? = null,
+    val is_sequential: Boolean = false,
+    val priority: String = "NONE"
 )
 
 @Serializable
@@ -137,7 +147,12 @@ data class ServerTaskUpdateDto(
     val block_type: String? = null,
     val is_completed: Boolean? = null,
     val reminder_time: String? = null,
-    val subtasks: List<ServerSubTaskDto>? = null
+    val subtasks: List<ServerSubTaskDto>? = null,
+    val horizon: String? = null,
+    val waiting_on: String? = null,
+    val is_sequential: Boolean? = null,
+    val active_subtask_index: Int? = null,
+    val priority: String? = null
 )
 
 @Serializable

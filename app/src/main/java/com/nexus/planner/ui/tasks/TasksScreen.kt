@@ -7,6 +7,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,30 +24,60 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.nexus.planner.data.remote.ServerScheduleBlockDto
 import com.nexus.planner.ui.theme.*
+import com.nexus.planner.util.NlTaskParser
+import kotlinx.coroutines.delay
 
 @Composable
 fun TasksScreen(
     todayTasks: List<ServerScheduleBlockDto>,
     tomorrowTasks: List<ServerScheduleBlockDto>,
+    upcomingTasks: List<ServerScheduleBlockDto> = emptyList(),
+    inboxTasks: List<ServerScheduleBlockDto> = emptyList(),
+    waitingTasks: List<ServerScheduleBlockDto> = emptyList(),
+    somedayTasks: List<ServerScheduleBlockDto> = emptyList(),
+    activeHorizon: String = "TODAY",
+    onSelectHorizon: (String) -> Unit = {},
     isAutoPlanEnabled: Boolean,
     isLoading: Boolean = false,
+    undoNotice: String? = null,
+    onUndoDelete: () -> Unit = {},
+    onDismissUndo: () -> Unit = {},
+    onAdvanceSequentialSubtask: ((Long) -> Unit)? = null,
+    onMoveTaskToHorizon: ((Long, String) -> Unit)? = null,
     onToggleTask: (Long, Boolean) -> Unit,
     onToggleAutoPlan: () -> Unit,
     onTriggerAlarm: (ServerScheduleBlockDto) -> Unit,
     onQuickAddTask: (String, Boolean) -> Unit,
+    onQuickAddParsedTask: ((String) -> Unit)? = null,
     onDeleteTask: (Long) -> Unit,
+    onDeleteTaskWithUndo: ((ServerScheduleBlockDto) -> Unit)? = null,
     onUpdateTask: (Long, String, String, Int, Boolean) -> Unit,
     onCreateFullTask: ((String, String, Int, Boolean, String, String?, List<String>) -> Unit)? = null,
     onToggleSubTask: ((Long, Int) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    var selectedTab by remember { mutableStateOf("today") }
+    var selectedTab by remember(activeHorizon) { mutableStateOf(activeHorizon.lowercase()) }
     var editingTask by remember { mutableStateOf<ServerScheduleBlockDto?>(null) }
     var showCreateSheet by remember { mutableStateOf(false) }
     var selectedCategoryFilter by remember { mutableStateOf("ALL") }
     var quickInputText by remember { mutableStateOf("") }
 
-    val rawTasks = if (selectedTab == "today") todayTasks else tomorrowTasks
+    // Auto-dismiss undo snackbar after 5 seconds
+    LaunchedEffect(undoNotice) {
+        if (undoNotice != null) {
+            delay(5000)
+            onDismissUndo()
+        }
+    }
+
+    val rawTasks = when (selectedTab) {
+        "tomorrow" -> tomorrowTasks
+        "upcoming" -> upcomingTasks
+        "inbox" -> inboxTasks
+        "waiting" -> waitingTasks
+        "someday" -> somedayTasks
+        else -> todayTasks
+    }
     val currentTasks = if (selectedCategoryFilter == "ALL") {
         rawTasks
     } else {
@@ -62,11 +93,11 @@ fun TasksScreen(
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             
-            // Header Bar: Simply "TASKS" + Date Switcher (TODAY vs TOMORROW)
+            // Header Bar: "TASKS" + Dynamic Count Badge
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 12.dp, bottom = 8.dp),
+                    .padding(top = 12.dp, bottom = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -79,44 +110,57 @@ fun TasksScreen(
                     color = Color.White
                 )
 
-                // Date Switcher Tabs
                 Surface(
-                    color = Zinc900,
-                    shape = RoundedCornerShape(10.dp),
+                    color = Zinc950,
+                    shape = RoundedCornerShape(8.dp),
                     border = BorderStroke(1.dp, Zinc800)
                 ) {
-                    Row(modifier = Modifier.padding(2.dp)) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (selectedTab == "today") Color.White else Color.Transparent)
-                                .clickable { selectedTab = "today" }
-                                .padding(horizontal = 14.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = "TODAY",
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (selectedTab == "today") Color.Black else Zinc400
-                            )
-                        }
+                    Text(
+                        text = "GTD // ${currentTasks.size} ITEMS",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Emerald400,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
 
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (selectedTab == "tomorrow") Color.White else Color.Transparent)
-                                .clickable { selectedTab = "tomorrow" }
-                                .padding(horizontal = 14.dp, vertical = 6.dp)
-                        ) {
-                            Text(
-                                text = "TOMORROW",
-                                fontFamily = FontFamily.Monospace,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (selectedTab == "tomorrow") Color.Black else Zinc400
-                            )
+            // Universal GTD Horizon Strip (TODAY, TOMORROW, UPCOMING, INBOX, WAITING FOR, SOMEDAY)
+            val horizons = listOf(
+                "today" to "TODAY (${todayTasks.size})",
+                "tomorrow" to "TOMORROW (${tomorrowTasks.size})",
+                "upcoming" to "UPCOMING (${upcomingTasks.size})",
+                "inbox" to "INBOX (${inboxTasks.size})",
+                "waiting" to "WAITING (${waitingTasks.size})",
+                "someday" to "SOMEDAY (${somedayTasks.size})"
+            )
+
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                items(horizons) { (key, label) ->
+                    val isSel = selectedTab == key
+                    Surface(
+                        color = if (isSel) Color.White else Zinc950,
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, if (isSel) Color.White else if (key == "waiting") Color(0xFF78350F) else Zinc800),
+                        modifier = Modifier.clickable {
+                            selectedTab = key
+                            onSelectHorizon(key.uppercase())
                         }
+                    ) {
+                        Text(
+                            text = label,
+                            fontFamily = FontFamily.Monospace,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isSel) Color.Black else if (key == "waiting") Color(0xFFFBBF24) else Zinc400,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
                     }
                 }
             }
@@ -238,6 +282,45 @@ fun TasksScreen(
                 }
             }
 
+            // Real-time NLP parsed chips preview (Planify feature)
+            val parsedNl = remember(quickInputText) {
+                if (quickInputText.isNotBlank()) NlTaskParser.parse(quickInputText, defaultHorizon = selectedTab.uppercase()) else null
+            }
+            if (parsedNl != null && (parsedNl.startTime != "10:00" || parsedNl.durationMinutes != 45 || parsedNl.category != "FOCUS" || parsedNl.priority != "NONE" || parsedNl.waitingOn != null || parsedNl.isSequential || parsedNl.horizon != selectedTab.uppercase())) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    if (parsedNl.startTime != "10:00") {
+                        Surface(color = Zinc900, shape = RoundedCornerShape(4.dp), border = BorderStroke(1.dp, Emerald400.copy(alpha = 0.5f))) {
+                            Text("⏰ ${parsedNl.startTime}", fontSize = 9.sp, fontFamily = FontFamily.Monospace, color = Emerald400, modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
+                        }
+                    }
+                    if (parsedNl.durationMinutes != 45) {
+                        Surface(color = Zinc900, shape = RoundedCornerShape(4.dp), border = BorderStroke(1.dp, Zinc700)) {
+                            Text("⏱ ${parsedNl.durationMinutes}m", fontSize = 9.sp, fontFamily = FontFamily.Monospace, color = Color(0xFF60A5FA), modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
+                        }
+                    }
+                    if (parsedNl.category != "FOCUS") {
+                        Surface(color = Zinc900, shape = RoundedCornerShape(4.dp), border = BorderStroke(1.dp, Zinc700)) {
+                            Text("#${parsedNl.category}", fontSize = 9.sp, fontFamily = FontFamily.Monospace, color = Color(0xFFC084FC), modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
+                        }
+                    }
+                    if (parsedNl.priority != "NONE") {
+                        Surface(color = Zinc900, shape = RoundedCornerShape(4.dp), border = BorderStroke(1.dp, Zinc700)) {
+                            Text("!${parsedNl.priority}", fontSize = 9.sp, fontFamily = FontFamily.Monospace, color = Color(0xFFF87171), modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
+                        }
+                    }
+                    if (parsedNl.waitingOn != null) {
+                        Surface(color = Zinc900, shape = RoundedCornerShape(4.dp), border = BorderStroke(1.dp, Color(0xFF78350F))) {
+                            Text("WAITING: ${parsedNl.waitingOn}", fontSize = 9.sp, fontFamily = FontFamily.Monospace, color = Color(0xFFFBBF24), modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp))
+                        }
+                    }
+                }
+            }
+
             // Quick Add Input
             Row(
                 modifier = Modifier
@@ -249,7 +332,7 @@ fun TasksScreen(
                 OutlinedTextField(
                     value = quickInputText,
                     onValueChange = { quickInputText = it },
-                    placeholder = { Text("+ Add a task (e.g. 'Gym workout at 5 PM')...", fontSize = 12.sp, color = Zinc500) },
+                    placeholder = { Text("+ Add task (e.g. 'Sync at 4pm 30m #work !high')...", fontSize = 12.sp, color = Zinc500) },
                     modifier = Modifier.weight(1f),
                     textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -269,7 +352,11 @@ fun TasksScreen(
                         modifier = Modifier.clickable {
                             val t = quickInputText
                             quickInputText = ""
-                            onQuickAddTask(t, isTomorrow)
+                            if (onQuickAddParsedTask != null) {
+                                onQuickAddParsedTask(t)
+                            } else {
+                                onQuickAddTask(t, isTomorrow)
+                            }
                         }
                     ) {
                         Text(
@@ -349,9 +436,63 @@ fun TasksScreen(
                             task = task,
                             isAutoPlanEnabled = isAutoPlanEnabled,
                             onToggleDone = { task.id?.let { onToggleTask(it, isTomorrow) } },
-                            onClick = { editingTask = task }
+                            onClick = { editingTask = task },
+                            onToggleSubTask = { sIdx -> task.id?.let { onToggleSubTask?.invoke(it, sIdx) } },
+                            onAdvanceSequentialSubtask = { task.id?.let { onAdvanceSequentialSubtask?.invoke(it) } }
                         )
                     }
+                }
+            }
+        }
+
+        // 5-Second Undo Toast Snackbar (Bottom Thumb-Friendly Placement)
+        AnimatedVisibility(
+            visible = undoNotice != null,
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 74.dp)
+                .fillMaxWidth()
+                .padding(horizontal = 4.dp)
+        ) {
+            Surface(
+                color = Color(0xFF18181B),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, Zinc700),
+                shadowElevation = 8.dp
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(text = "🗑", fontSize = 13.sp)
+                        Text(
+                            text = undoNotice ?: "",
+                            fontSize = 12.sp,
+                            color = Color.White,
+                            maxLines = 1
+                        )
+                    }
+                    Text(
+                        text = "UNDO",
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Emerald400,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { onUndoDelete() }
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
                 }
             }
         }
@@ -384,7 +525,11 @@ fun TasksScreen(
                 },
                 onDeleteTask = { id ->
                     editingTask = null
-                    onDeleteTask(id)
+                    if (onDeleteTaskWithUndo != null) {
+                        onDeleteTaskWithUndo(task)
+                    } else {
+                        onDeleteTask(id)
+                    }
                 },
                 onSaveTask = { title, startTime, duration, isTomorrowTarget, category, reminderTime, subtasks ->
                     editingTask = null
@@ -421,7 +566,8 @@ fun TaskListItem(
     isAutoPlanEnabled: Boolean,
     onToggleDone: () -> Unit,
     onClick: () -> Unit,
-    onToggleSubTask: ((Int) -> Unit)? = null
+    onToggleSubTask: ((Int) -> Unit)? = null,
+    onAdvanceSequentialSubtask: (() -> Unit)? = null
 ) {
     var isSubtasksExpanded by remember { mutableStateOf(false) }
     val bType = task.block_type.uppercase()
@@ -559,6 +705,40 @@ fun TaskListItem(
                                 )
                             }
 
+                            if (task.waiting_on != null) {
+                                Surface(
+                                    color = Color(0xFF271B04),
+                                    shape = RoundedCornerShape(4.dp),
+                                    border = BorderStroke(1.dp, Color(0xFF78350F))
+                                ) {
+                                    Text(
+                                        text = "⏳ ${task.waiting_on}",
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 8.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFFBBF24),
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
+
+                            if (task.priority != "NONE") {
+                                Surface(
+                                    color = Color(0xFF2D1214),
+                                    shape = RoundedCornerShape(4.dp),
+                                    border = BorderStroke(1.dp, Color(0xFF7F1D1D))
+                                ) {
+                                    Text(
+                                        text = "!${task.priority}",
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 8.5.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFF87171),
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
+
                             if (task.subtasks.isNotEmpty()) {
                                 val completedCount = task.subtasks.count { it.is_completed }
                                 Surface(
@@ -580,6 +760,54 @@ fun TaskListItem(
                 }
 
                 Text(text = "›", fontSize = 16.sp, color = Zinc600)
+            }
+
+            // Mindwtr-style Sequential Focus Step: ONLY active step shown to prevent overwhelm
+            if (task.is_sequential && task.subtasks.isNotEmpty() && !task.is_completed) {
+                val activeIdx = task.active_subtask_index.coerceIn(0, task.subtasks.size - 1)
+                val currentStep = task.subtasks.getOrNull(activeIdx)
+                if (currentStep != null) {
+                    Surface(
+                        color = Color(0xFF131316),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, Zinc800),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(start = 38.dp, top = 2.dp)
+                            .clickable { onAdvanceSequentialSubtask?.invoke() }
+                    ) {
+                        Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(
+                                    text = "STEP ${activeIdx + 1} OF ${task.subtasks.size} (SEQUENTIAL FOCUS)",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 9.sp,
+                                    color = Zinc400
+                                )
+                                Text(
+                                    text = "TAP TO ADVANCE",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 8.5.sp,
+                                    color = Emerald400
+                                )
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(13.dp)
+                                        .clip(RoundedCornerShape(3.dp))
+                                        .border(1.dp, Zinc600, RoundedCornerShape(3.dp)),
+                                    contentAlignment = Alignment.Center
+                                ) {}
+                                Text(
+                                    text = currentStep.title,
+                                    fontSize = 11.5.sp,
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             // Expandable Subtasks Accordion (Grit feature)

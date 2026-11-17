@@ -20,5 +20,11 @@ data class ScheduleBlockEntity(
     val status: String = "SCHEDULED", // SCHEDULED, ACTIVE, COMPLETED, SKIPPED, DELAYED
     val reminderTime: String? = null, // e.g. "09:30" or ISO
     val subtasksJson: String = "[]", // Serialized subtasks list
-    val sortOrder: Int = 0
+    val sortOrder: Int = 0,
+    val horizon: String = "TODAY", // TODAY, TOMORROW, UPCOMING, INBOX, WAITING, SOMEDAY
+    val waitingOn: String? = null, // e.g. "@Alex", "Finance Team"
+    val waitingSinceIso: String? = null, // e.g. "2026-11-15"
+    val isSequential: Boolean = false, // Sequential subtask focus mode
+    val activeSubtaskIndex: Int = 0, // Current active step in sequential mode
+    val priority: String = "NONE" // HIGH, MEDIUM, LOW, NONE
 )

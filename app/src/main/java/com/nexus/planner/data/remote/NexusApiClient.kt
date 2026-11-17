@@ -109,13 +109,18 @@ class NexusApiClient(
         category: String? = null,
         durationMinutes: Int = 45,
         reminderTime: String? = null,
-        subtasks: List<String> = emptyList()
+        subtasks: List<String> = emptyList(),
+        horizon: String = "TODAY",
+        waitingOn: String? = null,
+        isSequential: Boolean = false,
+        priority: String = "NONE"
     ): Result<ServerScheduleBlockDto> = withContext(Dispatchers.IO) {
         try {
             val authToken = token() ?: return@withContext Result.failure(IllegalStateException("Not authenticated"))
             val tomorrowStr = java.time.LocalDate.now().plusDays(1).toString()
             val todayStr = java.time.LocalDate.now().toString()
-            val targetDate = if (isTomorrow) tomorrowStr else todayStr
+            val targetDate = if (isTomorrow || horizon == "TOMORROW") tomorrowStr else todayStr
+            val computedHorizon = if (isTomorrow && horizon == "TODAY") "TOMORROW" else horizon
             val blockType = category ?: when {
                 title.contains("gym", ignoreCase = true) || title.contains("workout", ignoreCase = true) -> "WORKOUT"
                 title.contains("nap", ignoreCase = true) || title.contains("rest", ignoreCase = true) -> "TRANSITION"
@@ -129,7 +134,11 @@ class NexusApiClient(
                 scheduled_date = targetDate,
                 block_type = blockType,
                 reminder_time = reminderTime,
-                subtasks = subtasks
+                subtasks = subtasks,
+                horizon = computedHorizon,
+                waiting_on = waitingOn,
+                is_sequential = isSequential,
+                priority = priority
             ))
             val reqBody = payload.toRequestBody(jsonMediaType)
             val request = Request.Builder()
@@ -160,7 +169,12 @@ class NexusApiClient(
         isCompleted: Boolean? = null,
         category: String? = null,
         reminderTime: String? = null,
-        subtasks: List<ServerSubTaskDto>? = null
+        subtasks: List<ServerSubTaskDto>? = null,
+        horizon: String? = null,
+        waitingOn: String? = null,
+        isSequential: Boolean? = null,
+        activeSubtaskIndex: Int? = null,
+        priority: String? = null
     ): Result<ServerScheduleBlockDto> = withContext(Dispatchers.IO) {
         try {
             val authToken = token() ?: return@withContext Result.failure(IllegalStateException("Not authenticated"))
@@ -172,7 +186,12 @@ class NexusApiClient(
                 block_type = category,
                 is_completed = isCompleted,
                 reminder_time = reminderTime,
-                subtasks = subtasks
+                subtasks = subtasks,
+                horizon = horizon,
+                waiting_on = waitingOn,
+                is_sequential = isSequential,
+                active_subtask_index = activeSubtaskIndex,
+                priority = priority
             ))
             val reqBody = payload.toRequestBody(jsonMediaType)
             val request = Request.Builder()

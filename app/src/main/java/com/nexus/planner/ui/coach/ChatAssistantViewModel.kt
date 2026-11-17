@@ -8,6 +8,7 @@ import com.nexus.planner.data.remote.ServerHabitDto
 import com.nexus.planner.data.remote.ServerScheduleBlockDto
 import com.nexus.planner.data.remote.ServerSubTaskDto
 import com.nexus.planner.service.NexusAlarmScheduler
+import com.nexus.planner.util.NlTaskParser
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,6 +19,13 @@ data class ChatAssistantUiState(
     val messages: List<ServerChatMessageDto> = emptyList(),
     val todaySchedule: List<ServerScheduleBlockDto> = emptyList(),
     val tomorrowSchedule: List<ServerScheduleBlockDto> = emptyList(),
+    val upcomingSchedule: List<ServerScheduleBlockDto> = emptyList(),
+    val inboxTasks: List<ServerScheduleBlockDto> = emptyList(),
+    val waitingTasks: List<ServerScheduleBlockDto> = emptyList(),
+    val somedayTasks: List<ServerScheduleBlockDto> = emptyList(),
+    val activeHorizon: String = "TODAY",
+    val lastDeletedTask: ServerScheduleBlockDto? = null,
+    val undoSnackbarNotice: String? = null,
     val habits: List<ServerHabitDto> = emptyList(),
     val isAutoPlanEnabled: Boolean = true,
     val activeAlarmTask: ServerScheduleBlockDto? = null,
@@ -308,6 +316,147 @@ class ChatAssistantViewModel(
                     _uiState.update { it.copy(todaySchedule = listOf(newBlock) + it.todaySchedule) }
                 }
                 _uiState.update { it.copy(toastNotice = "Added '$title'") }
+            }
+        }
+    }
+
+    fun setHorizon(horizon: String) {
+        _uiState.update { it.copy(activeHorizon = horizon) }
+    }
+
+    fun dismissUndoSnackbar() {
+        _uiState.update { it.copy(undoSnackbarNotice = null, lastDeletedTask = null) }
+    }
+
+    fun deleteTaskWithUndo(task: ServerScheduleBlockDto, context: android.content.Context? = null) {
+        val blockId = task.id ?: return
+        viewModelScope.launch {
+            _uiState.update { state ->
+                state.copy(
+                    todaySchedule = state.todaySchedule.filter { it.id != blockId },
+                    tomorrowSchedule = state.tomorrowSchedule.filter { it.id != blockId },
+                    upcomingSchedule = state.upcomingSchedule.filter { it.id != blockId },
+                    inboxTasks = state.inboxTasks.filter { it.id != blockId },
+                    waitingTasks = state.waitingTasks.filter { it.id != blockId },
+                    somedayTasks = state.somedayTasks.filter { it.id != blockId },
+                    lastDeletedTask = task,
+                    undoSnackbarNotice = "\"${task.title}\" moved to trash"
+                )
+            }
+            if (context != null) {
+                NexusAlarmScheduler.cancelTaskAlarm(context, blockId)
+            }
+            apiClient.deleteBlock(blockId)
+        }
+    }
+
+    fun undoDeleteTask(context: android.content.Context? = null) {
+        val task = _uiState.value.lastDeletedTask ?: return
+        viewModelScope.launch {
+            apiClient.createQuickTask(
+                title = task.title,
+                startTime = task.start_time,
+                isTomorrow = task.horizon == "TOMORROW",
+                category = task.block_type,
+                durationMinutes = task.duration_minutes,
+                reminderTime = task.reminder_time,
+                subtasks = task.subtasks.map { it.title },
+                horizon = task.horizon,
+                waitingOn = task.waiting_on,
+                isSequential = task.is_sequential,
+                priority = task.priority
+            ).onSuccess { restored ->
+                when (restored.horizon.uppercase()) {
+                    "TOMORROW" -> _uiState.update { it.copy(tomorrowSchedule = listOf(restored) + it.tomorrowSchedule) }
+                    "UPCOMING" -> _uiState.update { it.copy(upcomingSchedule = listOf(restored) + it.upcomingSchedule) }
+                    "INBOX" -> _uiState.update { it.copy(inboxTasks = listOf(restored) + it.inboxTasks) }
+                    "WAITING" -> _uiState.update { it.copy(waitingTasks = listOf(restored) + it.waitingTasks) }
+                    "SOMEDAY" -> _uiState.update { it.copy(somedayTasks = listOf(restored) + it.somedayTasks) }
+                    else -> _uiState.update { it.copy(todaySchedule = listOf(restored) + it.todaySchedule) }
+                }
+                _uiState.update { it.copy(undoSnackbarNotice = null, lastDeletedTask = null, toastNotice = "Restored \"${task.title}\"") }
+            }
+        }
+    }
+
+    fun moveTaskToHorizon(blockId: Long, targetHorizon: String) {
+        viewModelScope.launch {
+            val all = _uiState.value.todaySchedule + _uiState.value.tomorrowSchedule + _uiState.value.upcomingSchedule + _uiState.value.inboxTasks + _uiState.value.waitingTasks + _uiState.value.somedayTasks
+            val target = all.find { it.id == blockId } ?: return@launch
+            val updated = target.copy(horizon = targetHorizon)
+
+            _uiState.update { state ->
+                state.copy(
+                    todaySchedule = state.todaySchedule.filter { it.id != blockId }.let { if (targetHorizon == "TODAY") listOf(updated) + it else it },
+                    tomorrowSchedule = state.tomorrowSchedule.filter { it.id != blockId }.let { if (targetHorizon == "TOMORROW") listOf(updated) + it else it },
+                    upcomingSchedule = state.upcomingSchedule.filter { it.id != blockId }.let { if (targetHorizon == "UPCOMING") listOf(updated) + it else it },
+                    inboxTasks = state.inboxTasks.filter { it.id != blockId }.let { if (targetHorizon == "INBOX") listOf(updated) + it else it },
+                    waitingTasks = state.waitingTasks.filter { it.id != blockId }.let { if (targetHorizon == "WAITING") listOf(updated) + it else it },
+                    somedayTasks = state.somedayTasks.filter { it.id != blockId }.let { if (targetHorizon == "SOMEDAY") listOf(updated) + it else it },
+                    toastNotice = "Moved to $targetHorizon"
+                )
+            }
+            apiClient.updateBlock(blockId = blockId, horizon = targetHorizon)
+        }
+    }
+
+    fun advanceSequentialSubtask(blockId: Long) {
+        viewModelScope.launch {
+            val all = _uiState.value.todaySchedule + _uiState.value.tomorrowSchedule + _uiState.value.upcomingSchedule + _uiState.value.inboxTasks + _uiState.value.waitingTasks + _uiState.value.somedayTasks
+            val target = all.find { it.id == blockId } ?: return@launch
+            val nextIdx = target.active_subtask_index + 1
+            val updatedSubtasks = target.subtasks.mapIndexed { idx, sub ->
+                if (idx <= target.active_subtask_index) sub.copy(is_completed = true) else sub
+            }
+            val isAllDone = nextIdx >= target.subtasks.size
+            val updated = target.copy(
+                active_subtask_index = nextIdx,
+                subtasks = updatedSubtasks,
+                is_completed = isAllDone
+            )
+
+            _uiState.update { state ->
+                fun updateList(list: List<ServerScheduleBlockDto>) = list.map { if (it.id == blockId) updated else it }
+                state.copy(
+                    todaySchedule = updateList(state.todaySchedule),
+                    tomorrowSchedule = updateList(state.tomorrowSchedule),
+                    upcomingSchedule = updateList(state.upcomingSchedule),
+                    inboxTasks = updateList(state.inboxTasks),
+                    waitingTasks = updateList(state.waitingTasks),
+                    somedayTasks = updateList(state.somedayTasks),
+                    toastNotice = if (isAllDone) "All subtasks completed! 🎉" else "Advanced to step ${nextIdx + 1}"
+                )
+            }
+            apiClient.updateBlock(blockId = blockId, activeSubtaskIndex = nextIdx, isCompleted = isAllDone, subtasks = updatedSubtasks)
+        }
+    }
+
+    fun createTaskWithNl(inputText: String, context: android.content.Context? = null) {
+        if (inputText.isBlank()) return
+        val currentHorizon = _uiState.value.activeHorizon
+        val parsed = NlTaskParser.parse(inputText, defaultHorizon = currentHorizon)
+
+        viewModelScope.launch {
+            apiClient.createQuickTask(
+                title = parsed.title,
+                startTime = parsed.startTime,
+                isTomorrow = parsed.isTomorrow,
+                category = parsed.category,
+                durationMinutes = parsed.durationMinutes,
+                horizon = parsed.horizon,
+                waitingOn = parsed.waitingOn,
+                isSequential = parsed.isSequential,
+                priority = parsed.priority
+            ).onSuccess { newBlock ->
+                when (newBlock.horizon.uppercase()) {
+                    "TOMORROW" -> _uiState.update { it.copy(tomorrowSchedule = listOf(newBlock) + it.tomorrowSchedule) }
+                    "UPCOMING" -> _uiState.update { it.copy(upcomingSchedule = listOf(newBlock) + it.upcomingSchedule) }
+                    "INBOX" -> _uiState.update { it.copy(inboxTasks = listOf(newBlock) + it.inboxTasks) }
+                    "WAITING" -> _uiState.update { it.copy(waitingTasks = listOf(newBlock) + it.waitingTasks) }
+                    "SOMEDAY" -> _uiState.update { it.copy(somedayTasks = listOf(newBlock) + it.somedayTasks) }
+                    else -> _uiState.update { it.copy(todaySchedule = listOf(newBlock) + it.todaySchedule) }
+                }
+                _uiState.update { it.copy(toastNotice = "Added \"${parsed.title}\" to ${newBlock.horizon}") }
             }
         }
     }
